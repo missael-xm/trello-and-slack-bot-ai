@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  careersense-chat:
+    build:
+      context: .
+      dockerfile: Dockerfile  # Usar Dockerfile.prod para producción
+    env_file:
+      - .env  # Carga variables de entorno
+    volumes: 
+      - .:/app  # Montar código local (para desarrollo)
+    ports:
+      - 8050:8050  # Mapear puerto host:contenedor
+    environment:
+      - PYTHONPATH=/app/src  # Para que Python encuentre los módulos
+    depends_on:
+      - mongodb  # Esperar que MongoDB esté listo
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - 27018:27017  # MongoDB disponible en puerto 27018
+    volumes:
+      - mongodb_data:/data/db  # Volumen persistente
+    command: ["--logpath", "/var/log/mongodb/mongod.log"]
+
+volumes:
+  mongodb_data:  # Volumen named para persistencia
