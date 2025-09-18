@@ -1,36 +1,14 @@
-# src/output_formats/task_output.py
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
-from models.langchain import LangchainOutput
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+from typing import List
+from models.langchain import create_pydantic_output_config
 
-def task_output_format() -> LangchainOutput:
-    """
-    Define el formato de respuesta para la cadena de tareas.
-    La IA debe devolver título y lista de tasks en bullet points.
-    """
-    response_schemas = [
-        ResponseSchema(
-            name="title",
-            description="General goal. Empty or Null if there are no tasks",
-            type="string"
-        ),
-        ResponseSchema(
-            name="tasks",
-            description="*Tasks:*\n• task_1\n• task_2\n ...\n• task_n. Empty" +
-            " or Null if there are no tasks",
-            type="string"
-        ),
-    ]
+class TaskOutput(BaseModel):
+    title: str = Field(description="Título general de las tareas")
+    tasks: List[str] = Field(description="Lista de tareas específicas en formato bullet points")
+    categories: List[str] = Field(description="Categorías de cada tarea")
+    priorities: List[str] = Field(description="Prioridades de cada tarea")
 
-    structured_output_parser = StructuredOutputParser.from_response_schemas(
-        response_schemas=response_schemas
-    )
-    format_instructions = structured_output_parser.get_format_instructions(
-        only_json=True
-    )
-
-    output = LangchainOutput(
-        format=format_instructions,
-        parser=structured_output_parser,
-    )
-
-    return output
+def task_output_format():
+    """Define y retorna el parser para el formato de salida de tareas"""
+    return create_pydantic_output_config(TaskOutput)

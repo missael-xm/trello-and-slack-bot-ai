@@ -12,10 +12,7 @@ class TrelloMainData():
         # Extracción segura de datos del webhook
         comment = find_key_get_value("text", trello_event_action['data'])
         card_title = find_key_get_value("name", trello_event_action['data']['card'])
-        
-        print("Datos de la acción de Trello recibidos:")
-        print(json.dumps(trello_event_action, indent=2))
-        
+
         self.action_main_data = TrelloActionMainData(
             action_id=trello_event_action['id'],
             action_type=trello_event_action['type'],

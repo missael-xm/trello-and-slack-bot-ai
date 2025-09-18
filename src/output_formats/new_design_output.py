@@ -1,30 +1,13 @@
-# src/output_formats/new_design_output.py
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
-from models.langchain import LangchainOutput
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from models.langchain import create_pydantic_output_config
 
-def new_design_output_format() -> LangchainOutput:
-    """
-    Define el formato de respuesta para la cadena de nuevos diseños.
-    La IA debe devolver contexto de diseño.
-    """
-    response_schemas = [
-        ResponseSchema(
-            name="context",
-            description="Final Answer",
-            type="string"
-        ),
-    ]
+class NewDesignOutput(BaseModel):
+    context: Optional[str] = Field(description="Contexto relevante extraído de la descripción")
+    requirements: List[str] = Field(default_factory=list, description="Lista de requisitos técnicos")
+    design_type: Optional[str] = Field(description="Tipo de diseño o desarrollo requerido")
 
-    structured_output_parser = StructuredOutputParser.from_response_schemas(
-        response_schemas=response_schemas
-    )
-    format_instructions = structured_output_parser.get_format_instructions(
-        only_json=True
-    )
-
-    output = LangchainOutput(
-        format=format_instructions,
-        parser=structured_output_parser,
-    )
-
-    return output
+def new_design_output_format():
+    """Define y retorna el parser para el formato de salida de nuevo diseño"""
+    return create_pydantic_output_config(NewDesignOutput)

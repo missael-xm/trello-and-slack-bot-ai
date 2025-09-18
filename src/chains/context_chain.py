@@ -1,4 +1,3 @@
-# src/chains/context_chain.py
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from templates.context_chain_template import CONTEXT_CHAIN_TEMPLATE
@@ -10,6 +9,8 @@ def generate_conversation_context(llm, trello_card_id) -> LLMChain:
     Cadena que analiza el historial de comentarios y extrae contexto relevante.
     Usa callback para persistir en MongoDB y evitar procesamiento duplicado.
     """
+    output_config = context_output_format()
+    
     prompt = PromptTemplate(
         input_variables=[
             'card_comment_history',
@@ -19,7 +20,7 @@ def generate_conversation_context(llm, trello_card_id) -> LLMChain:
         name='Assistant Rol',
         template=CONTEXT_CHAIN_TEMPLATE,
         partial_variables={
-            "format_instructions": context_output_format().format
+            "format_instructions": output_config.format_instructions  # ← Debe ser format_instructions
         },
         validate_template=True,
     )
@@ -28,7 +29,7 @@ def generate_conversation_context(llm, trello_card_id) -> LLMChain:
         name="Agatha Trunchbull",
         llm=llm,
         prompt=prompt,
-        output_parser=context_output_format().parser,
+        output_parser=output_config.parser,
         verbose=False,
         output_key="conversation_context",
         callbacks=[ContextChainCallback(trello_card_id=trello_card_id)]

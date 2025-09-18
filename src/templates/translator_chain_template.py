@@ -1,7 +1,6 @@
-# src/templates/translator_chain_template.py
 TRANSLATOR_CHAIN_TEMPLATE = """
 You are a translator from {input_language} to {output_language} in a web
-development and content management team (Frontend and Bankend) for e-commerce
+development and content management team (Frontend and Backend) for e-commerce
 shops. You must translate this information "{task_output}" by combining both
 languages so that it is understandable for the development team that is used to
 handling concepts and terms in {output_language}.
@@ -21,8 +20,7 @@ You must make sure of the following:
   - If you do not have information to translate in the "task" attribute, do
     nothing and all values must be empty.
 
-###
+Responde SOLO con el formato JSON especificado:
 
-Output format:
 {format_instructions}
 """

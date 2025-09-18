@@ -1,4 +1,3 @@
-# src/chains/translator_chain.py
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from templates.translator_chain_template import TRANSLATOR_CHAIN_TEMPLATE
@@ -9,6 +8,8 @@ def translate_text_string(llm) -> LLMChain:
     Cadena que traduce y formatea las tareas identificadas
     para el equipo de desarrollo, manteniendo terminología técnica.
     """
+    output_config = translation_output_format()
+    
     prompt = PromptTemplate(
         input_variables=[
             "input_language",
@@ -17,14 +18,14 @@ def translate_text_string(llm) -> LLMChain:
         ],
         template=TRANSLATOR_CHAIN_TEMPLATE,
         partial_variables={
-            "format_instructions": translation_output_format().format
+            "format_instructions": output_config.format_instructions  # ← Cambiado a format_instructions
         }
     )
 
     llm_chain = LLMChain(
         llm=llm,
         prompt=prompt,
-        output_parser=translation_output_format().parser,
+        output_parser=output_config.parser,
         verbose=False,
         output_key="translate_output"
     )
