@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Trello AI Bot{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-800">Dashboard</h1>
+    <p class="text-gray-600">Resumen de proyectos y métricas del sistema</p>
+</div>
+
+<!-- Metrics Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="metric-card bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center">
+            <div class="p-3 bg-blue-100 rounded-lg">
+                <i class="fas fa-project-diagram text-blue-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Total Proyectos</p>
+                <p class="text-2xl font-bold text-gray-900">{{ metrics.total_projects }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="metric-card bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center">
+            <div class="p-3 bg-green-100 rounded-lg">
+                <i class="fas fa-tasks text-green-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Tareas Generadas</p>
+                <p class="text-2xl font-bold text-gray-900">{{ metrics.total_tasks }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="metric-card bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center">
+            <div class="p-3 bg-purple-100 rounded-lg">
+                <i class="fas fa-clock text-purple-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Horas Estimadas</p>
+                <p class="text-2xl font-bold text-gray-900">{{ metrics.total_estimated_hours }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="metric-card bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div class="flex items-center">
+            <div class="p-3 bg-orange-100 rounded-lg">
+                <i class="fas fa-check-circle text-orange-600 text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600">Completados</p>
+                <p class="text-2xl font-bold text-gray-900">{{ metrics.completed_projects }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <!-- Recent Projects -->
+    <div class="chart-container p-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">Proyectos Recientes</h2>
+        <div class="space-y-4">
+            {% for project in recent_projects %}
+            <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h3 class="font-semibold text-gray-800">{{ project.card_title }}</h3>
+                        <p class="text-sm text-gray-600 mt-1">
+                            <i class="fas fa-user mr-1"></i>{{ project.requested_by }}
+                        </p>
+                        <p class="text-sm text-gray-600">
+                            <i class="fas fa-calendar mr-1"></i>
+                            {{ project.request_date.strftime('%d/%m/%Y') if project.request_date else 'N/A' }}
+                        </p>
+                    </div>
+                    <div class="text-right">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
+                                    {% if project.status == 'completed' %}bg-green-100 text-green-800
+                                    {% elif project.status == 'in_progress' %}bg-blue-100 text-blue-800
+                                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                            {{ project.status }}
+                        </span>
+                        <p class="text-sm text-gray-600 mt-1">{{ project.total_tasks }} tareas</p>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <a href="/dashboard/project/{{ project.project_id }}" 
+                       class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                        Ver detalles →
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if not recent_projects %}
+        <div class="text-center py-8 text-gray-500">
+            <i class="fas fa-inbox text-4xl mb-2"></i>
+            <p>No hay proyectos recientes</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="chart-container p-6">
+        <h2 class="text-xl font-bold text-gray-800 mb-4">Estadísticas Rápidas</h2>
+        <div class="space-y-4">
+            <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                <span class="text-gray-600">Tasa de Éxito</span>
+                <span class="font-semibold text-green-600">{{ metrics.success_rate }}%</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                <span class="text-gray-600">Promedio Tareas/Proyecto</span>
+                <span class="font-semibold text-blue-600">{{ metrics.average_tasks_per_project }}</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                <span class="text-gray-600">Promedio Horas/Proyecto</span>
+                <span class="font-semibold text-purple-600">{{ metrics.average_hours_per_project }}h</span>
+            </div>
+            <div class="flex justify-between items-center py-2">
+                <span class="text-gray-600">Proyectos Pendientes</span>
+                <span class="font-semibold text-yellow-600">{{ metrics.pending_projects }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
