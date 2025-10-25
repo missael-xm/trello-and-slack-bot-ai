@@ -1,11 +1,20 @@
+# src/trello_to_slack/tts_features.py - CORREGIDO
 from slack.slack_features import SlackFeatures
 from assistant.ecommerce_assistant import EcommerceAssistant
-from langchain_openai import ChatOpenAI
+# CAMBIAR: from langchain_openai import ChatOpenAI
+from langchain.llms import OpenAI
+from langchain.chat_models import ChatOpenAI
 from typing import Union
-from langchain_community.callbacks import get_openai_callback
 import json
 from datetime import datetime
 from database.mongo_db import MongoDB
+
+# IMPORT CORREGIDO - usar la versión de community
+try:
+    from langchain_community.callbacks import get_openai_callback
+except ImportError:
+    # Fallback para versiones antiguas
+    from langchain.callbacks import get_openai_callback
 
 class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
     """
@@ -199,7 +208,6 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             traceback.print_exc()
 
     # 🆕 MÉTODOS AUXILIARES PARA CÁLCULOS DE ANALYTICS
-
     def _calculate_average_complexity(self, tasks: list) -> str:
         """Calcula la complejidad promedio de las tareas"""
         if not tasks:

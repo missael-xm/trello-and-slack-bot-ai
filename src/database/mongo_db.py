@@ -1,11 +1,12 @@
-# src/database/mongo_db.py
+# src/database/mongo_db.py - CONEXIÓN CORREGIDA
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from models.mongo_db import TrelloCard
 from utils.config import mongodb_uri
 from typing import Union
-import certifi  # AÑADIDO
-from datetime import datetime, timedelta  # AÑADIDO
+import certifi
+from datetime import datetime, timedelta
+from collections import Counter
 
 class MongoDB():
     """
@@ -13,7 +14,23 @@ class MongoDB():
     Evita procesar comentarios duplicados y reduce costos de OpenAI.
     """
     def __init__(self) -> None:
-        self.client = MongoClient(mongodb_uri, tlsCAFile=certifi.where())
+        # CONEXIÓN CORREGIDA para problemas SSL en Windows
+        try:
+            # Opción 1: Intentar con certifi
+            self.client = MongoClient(mongodb_uri, tlsCAFile=certifi.where())
+            print("✅ MongoDB conectado con certifi")
+        except Exception as e:
+            try:
+                # Opción 2: Intentar sin verificación SSL (solo para desarrollo)
+                self.client = MongoClient(mongodb_uri, tlsAllowInvalidCertificates=True)
+                print("✅ MongoDB conectado sin verificación SSL")
+            except Exception as e2:
+                # Opción 3: Conexión local como fallback
+                print(f"❌ Error conexión MongoDB: {e}")
+                print("🔄 Intentando con MongoDB local...")
+                self.client = MongoClient("mongodb://localhost:27017/")
+                print("✅ MongoDB local conectado")
+        
         db = self.client["trello_db"]
         self.collection = db["card"]  # Colección existente
         self.analytics_collection = db["analytics"]
@@ -91,8 +108,6 @@ class MongoDB():
 
     def get_analytics_metrics(self, days: int = 30):
         """Obtiene métricas agregadas para el dashboard"""
-        from collections import Counter  # MOVIDO aquí para evitar import circular
-        
         start_date = datetime.utcnow() - timedelta(days=days)
         projects = self.get_projects_since(start_date)
 

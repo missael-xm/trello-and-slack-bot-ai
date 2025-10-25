@@ -1,6 +1,5 @@
-# src/trello/trello_features.py
+# src/trello/trello_features.py - CORREGIDO
 from trello.trello_requests import TrelloRequests
-from langchain_community.document_loaders import RecursiveUrlLoader
 from typing import Union
 import re
 

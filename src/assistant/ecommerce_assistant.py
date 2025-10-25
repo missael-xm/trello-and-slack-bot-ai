@@ -1,4 +1,7 @@
-from langchain_openai import ChatOpenAI
+# src/assistant/ecommerce_assistant.py - CORREGIDO
+# CAMBIAR: from langchain_openai import ChatOpenAI
+from langchain.llms import OpenAI
+from langchain.chat_models import ChatOpenAI
 from langchain.chains import SequentialChain
 from chains.new_design_chain import generate_new_design
 from chains.context_chain import generate_conversation_context
