@@ -1,3 +1,4 @@
+# src/chains/new_design_chain.py - CORREGIDO
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from templates.new_design_chain_template import NEW_DESIGN_CHAIN_TEMPLATE
@@ -14,15 +15,15 @@ def generate_new_design(llm) -> LLMChain:
         input_variables=[
             'card_description',
         ],
-        name='Assistant Rol',
+        # ELIMINADO: name='Assistant Rol',
         template=NEW_DESIGN_CHAIN_TEMPLATE,
         partial_variables={
-            "format_instructions": output_config.format_instructions  # ← Cambiado a format_instructions
+            "format_instructions": output_config.format_instructions
         }
     )
 
     llm_chain = LLMChain(
-        name="Agatha Trunchbull",
+        # ELIMINADO: name="Agatha Trunchbull",
         llm=llm,
         prompt=prompt,
         output_parser=output_config.parser,

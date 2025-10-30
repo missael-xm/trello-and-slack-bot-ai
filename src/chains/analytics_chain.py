@@ -1,3 +1,4 @@
+# src/chains/analytics_chain.py - CORREGIDO
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from templates.analytics_chain_template import ANALYTICS_CHAIN_TEMPLATE

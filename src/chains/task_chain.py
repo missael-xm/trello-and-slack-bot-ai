@@ -1,3 +1,4 @@
+# src/chains/task_chain.py - CORREGIDO
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from templates.task_chain_template import TASK_CHAIN_TEMPLATE
@@ -18,7 +19,7 @@ def generate_tasks(llm) -> LLMChain:
         ],
         template=TASK_CHAIN_TEMPLATE,
         partial_variables={
-            "format_instructions": output_config.format_instructions  # ← Cambiado a format_instructions
+            "format_instructions": output_config.format_instructions
         }
     )
 

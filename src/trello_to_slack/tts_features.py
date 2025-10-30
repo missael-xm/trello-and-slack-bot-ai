@@ -54,9 +54,27 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
         Monitorea el costo de OpenAI con get_openai_callback().
         """
         try:
-            with get_openai_callback() as cb:
-                self.message = self.get_answer(event_type=self.event_type)
-                print("\nOpenAI Usage Cost:\n", cb, "\n")
+            # Inicializar callback como None por si falla
+            cb = None
+            
+            # Usar try/except para el callback ya que puede fallar en algunas versiones
+            try:
+                from langchain_community.callbacks import get_openai_callback
+                with get_openai_callback() as callback:
+                    self.message = self.get_answer(event_type=self.event_type)
+                    cb = callback
+                    print("\nOpenAI Usage Cost:\n", cb, "\n")
+            except ImportError:
+                try:
+                    from langchain.callbacks import get_openai_callback
+                    with get_openai_callback() as callback:
+                        self.message = self.get_answer(event_type=self.event_type)
+                        cb = callback
+                        print("\nOpenAI Usage Cost:\n", cb, "\n")
+                except Exception:
+                    # Si falla el callback, ejecutar sin él
+                    print("⚠️  No se pudo inicializar OpenAI callback, ejecutando sin tracking...")
+                    self.message = self.get_answer(event_type=self.event_type)
 
             # Convertir Pydantic model a dict si es necesario
             if hasattr(self.message, 'dict'):
@@ -167,14 +185,27 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                         # Estimación por defecto basada en complejidad
                         total_estimated_hours += 4.0  # 4 horas por defecto
 
+            # Obtener información del solicitante CORREGIDA
+            requested_by = "unknown"
+            recent_comment_text = ""
+            
+            # CORREGIDO: Acceso correcto a atributos del objeto Pydantic
+            if hasattr(self, 'main_data') and self.main_data:
+                # main_data es un objeto TrelloActionMainData, no un dict
+                requested_by = getattr(self.main_data, 'username', 'unknown')
+                recent_comment_text = getattr(self.main_data, 'comment', '')
+            else:
+                # Fallback si no hay main_data
+                requested_by = getattr(self, 'recent_comment', 'unknown').split('author: ')[-1].split(' -')[0] if 'author:' in getattr(self, 'recent_comment', '') else 'unknown'
+
             # Preparar datos para analytics
             analytics_data = {
                 "project_id": f"proj_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{self.card_id[-6:]}",
                 "card_id": self.card_id,
                 "card_title": self.card_title,
-                "requested_by": getattr(self, 'main_data', {}).get('username', 'unknown'),
+                "requested_by": requested_by,
                 "request_date": datetime.utcnow(),
-                "original_comment": getattr(self, 'recent_comment', ''),
+                "original_comment": recent_comment_text,
                 "total_tasks": total_tasks,
                 "total_estimated_hours": total_estimated_hours,
                 "average_complexity": self._calculate_average_complexity(tasks),
@@ -188,9 +219,9 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                 "skill_frequency": self._calculate_skill_frequency(tasks),
                 "status": "pending",
                 "progress_percentage": 0.0,
-                "ai_model_used": getattr(self.llm, 'model_name', 'gpt-4'),
-                "processing_time": openai_callback.total_seconds if hasattr(openai_callback, 'total_seconds') else 0,
-                "confidence_score": 0.8,  # Podría calcularse basado en la respuesta
+                "ai_model_used": getattr(self.llm, 'model_name', 'unknown'),
+                "processing_time": openai_callback.total_seconds if openai_callback and hasattr(openai_callback, 'total_seconds') else 0,
+                "confidence_score": 0.8,
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow(),
                 "last_analysis_update": datetime.utcnow()

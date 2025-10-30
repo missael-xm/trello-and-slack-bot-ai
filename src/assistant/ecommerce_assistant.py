@@ -108,7 +108,7 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
 
             # Cadena secuencial: Context → Tasks → Translation
             overall_chain = SequentialChain(
-                name='Sequential execution of chains',
+                # ELIMINADO: name='Sequential execution of chains',
                 input_variables=[
                     'conversation_context',
                     'allowed_users',
@@ -138,7 +138,7 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
             if hasattr(output, 'dict'):  # Si es un modelo Pydantic
                 return output.dict()
             return output
-                
+
         except Exception as e:
             print(f"❌ Error in get_answer: {e}")
             import traceback
