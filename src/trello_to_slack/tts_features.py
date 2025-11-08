@@ -8,6 +8,7 @@ from typing import Union
 import json
 from datetime import datetime
 from database.mongo_db import MongoDB
+from services.assignment_service import AssignmentService
 
 # IMPORT CORREGIDO - usar la versión de community
 try:
@@ -47,6 +48,7 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
         self.message = message
         self.slack_message_data = slack_message_data
         self.event_type = event_type
+        self.assignment_service = AssignmentService()
 
     def comment_on_slack(self) -> Union[None, str]:
         """
@@ -131,38 +133,83 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             return f"Error: {str(e)}"
 
     def _convert_to_slack_format(self, translation_data: dict) -> dict:
-        """Convierte el formato del translator al formato que espera Slack"""
+        """Convierte el formato y asigna tareas inteligentemente"""
         try:
-            # Extraer las tareas y convertirlas a formato markdown
             tasks_markdown = ""
+            assigned_tasks = []
+            
             if 'translated_tasks' in translation_data and translation_data['translated_tasks']:
                 for task in translation_data['translated_tasks']:
                     if isinstance(task, dict) and 'description' in task:
-                        tasks_markdown += f"• {task['description']}\n"
+                        # ASIGNACIÓN INTELIGENTE
+                        assignment = self._assign_task_to_member(task)
+                        
+                        task_text = f"• {task['description']}\n"
+                        task_text += f"  👤 Asignado a: <@{assignment.slack_id}> ({assignment.member_name})\n"
+                        task_text += f"  🎯 Confianza: {assignment.confidence_score:.0%}\n"
+                        task_text += f"  ⏱️ Estimado: {assignment.estimated_completion_time}h\n"
+                        task_text += f"  📋 Razón: {assignment.reason}\n"
+                        
+                        if 'category' in task:
+                            task_text += f"  📁 Categoría: {task['category']}\n"
+                        if 'priority' in task:
+                            task_text += f"  🚨 Prioridad: {task['priority']}\n"
+                        if 'complexity' in task:
+                            task_text += f"  🧩 Complejidad: {task['complexity']}\n"
+                        
+                        tasks_markdown += task_text + "\n"
+                        assigned_tasks.append(assignment)
+            
+            # Agregar resumen del equipo
+            team_metrics = self.assignment_service.get_team_metrics()
+            summary = f"*Resumen del Equipo:*\n"
+            summary += f"• Miembros disponibles: {team_metrics.available_members}/{team_metrics.total_members}\n"
+            summary += f"• Tareas asignadas: {team_metrics.total_tasks_assigned}\n"
+            summary += f"• Tasa de completación: {team_metrics.completion_rate:.1f}%\n"
+            
+            if team_metrics.busy_members:
+                summary += f"• Miembros muy ocupados: {len(team_metrics.busy_members)}\n"
+            
+            tasks_markdown = summary + "\n" + tasks_markdown
             
             # Usar el summary como título o crear uno por defecto
-            title = translation_data.get('summary', 'Tareas de desarrollo')
+            title = translation_data.get('summary', 'Tareas de desarrollo asignadas')
             
-            # Crear el formato que espera Slack
-            slack_format = {
+            return {
                 'title': title,
-                'tasks': tasks_markdown.strip()
+                'tasks': tasks_markdown.strip(),
+                'assigned_tasks': assigned_tasks  # Para analytics
             }
-            
-            return slack_format
             
         except Exception as e:
             print(f"❌ Error converting to Slack format: {e}")
-            # Fallback: devolver formato básico
             return {
                 'title': 'Tareas de desarrollo',
                 'tasks': 'Error procesando las tareas'
             }
 
+    def _assign_task_to_member(self, task: dict) -> AssignmentResult:
+        """Asignar tarea a miembro del equipo"""
+        required_skills = task.get('required_skills', [])
+        complexity = task.get('complexity', 'moderada')
+        
+        # Calcular horas estimadas
+        estimated_hours = 4.0  # default
+        if 'time_estimate' in task and isinstance(task['time_estimate'], dict):
+            time_est = task['time_estimate']
+            if 'realistic' in time_est:
+                estimated_hours = time_est['realistic']
+        
+        return self.assignment_service.assign_task(
+            task=task,
+            required_skills=required_skills,
+            complexity=complexity,
+            estimated_hours=estimated_hours
+        )
+
     def _save_analytics_data(self, translation_data: dict, openai_callback) -> None:
         """
-        🆕 NUEVO MÉTODO: Guarda datos de analytics en MongoDB
-        para el dashboard
+        Guarda datos de analytics con métricas por persona
         """
         try:
             # Solo guardar si hay tareas válidas
@@ -197,6 +244,31 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             else:
                 # Fallback si no hay main_data
                 requested_by = getattr(self, 'recent_comment', 'unknown').split('author: ')[-1].split(' -')[0] if 'author:' in getattr(self, 'recent_comment', '') else 'unknown'
+
+            member_metrics = {}
+            team_metrics = self.assignment_service.get_team_metrics()
+
+            for member in self.assignment_service.team_members.values():
+                member_metrics[member.slack_id] = {
+                    "name": member.name,
+                    "current_tasks": member.current_tasks,
+                    "completed_tasks": member.completed_tasks,
+                    "weekly_capacity": member.weekly_capacity,
+                    "current_weekly_hours": member.current_weekly_hours,
+                    "success_rate": member.success_rate,
+                    "avg_completion_time": member.avg_completion_time,
+                    "available": member.available,
+                    "skills": member.skills,
+                    "skill_level": member.skill_level.value
+                }
+
+            analytics_data.update({
+                "team_metrics": team_metrics.dict(),
+                "member_metrics": member_metrics,
+                "assignment_details": [task.dict() for task in (assigned_tasks or [])],
+                "workload_distribution": team_metrics.workload_distribution,
+                "skill_coverage": team_metrics.skill_coverage
+            })
 
             # Preparar datos para analytics
             analytics_data = {

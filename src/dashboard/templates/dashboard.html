@@ -104,6 +104,34 @@
         {% endif %}
     </div>
 
+    <div class="chart-container p-6 mt-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-gray-800">Resumen del Equipo</h2>
+            <a href="/dashboard/team-analytics" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                Ver detalles completos →
+            </a>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="teamSummary">
+            <!-- Se llenará dinámicamente -->
+            <div class="text-center p-4 bg-gray-100 rounded-lg">
+                <div class="text-2xl font-bold text-gray-800">-</div>
+                <div class="text-sm text-gray-600">Miembros</div>
+            </div>
+            <div class="text-center p-4 bg-gray-100 rounded-lg">
+                <div class="text-2xl font-bold text-gray-800">-</div>
+                <div class="text-sm text-gray-600">Disponibles</div>
+            </div>
+            <div class="text-center p-4 bg-gray-100 rounded-lg">
+                <div class="text-2xl font-bold text-gray-800">-</div>
+                <div class="text-sm text-gray-600">Tareas Activas</div>
+            </div>
+            <div class="text-center p-4 bg-gray-100 rounded-lg">
+                <div class="text-2xl font-bold text-gray-800">-</div>
+                <div class="text-sm text-gray-600">Ocupados</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Quick Stats -->
     <div class="chart-container p-6">
         <h2 class="text-xl font-bold text-gray-800 mb-4">Estadísticas Rápidas</h2>
@@ -128,3 +156,37 @@
     </div>
 </div>
 {% endblock %}
+
+<script>
+// Cargar resumen del equipo en el dashboard principal
+async function loadTeamSummary() {
+    try {
+        const response = await fetch('/dashboard/api/team-metrics?days=30');
+        const metrics = await response.json();
+        
+        document.getElementById('teamSummary').innerHTML = `
+            <div class="text-center p-4 bg-blue-50 rounded-lg">
+                <div class="text-2xl font-bold text-blue-600">${metrics.total_members}</div>
+                <div class="text-sm text-blue-800">Miembros</div>
+            </div>
+            <div class="text-center p-4 bg-green-50 rounded-lg">
+                <div class="text-2xl font-bold text-green-600">${metrics.available_members}</div>
+                <div class="text-sm text-green-800">Disponibles</div>
+            </div>
+            <div class="text-center p-4 bg-purple-50 rounded-lg">
+                <div class="text-2xl font-bold text-purple-600">${metrics.total_tasks_assigned}</div>
+                <div class="text-sm text-purple-800">Tareas Activas</div>
+            </div>
+            <div class="text-center p-4 bg-orange-50 rounded-lg">
+                <div class="text-2xl font-bold text-orange-600">${metrics.busy_members.length}</div>
+                <div class="text-sm text-orange-800">Ocupados</div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Error loading team summary:', error);
+    }
+}
+
+// Cargar cuando la página esté lista
+document.addEventListener('DOMContentLoaded', loadTeamSummary);
+</script>

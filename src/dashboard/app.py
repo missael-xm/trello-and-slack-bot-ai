@@ -89,3 +89,8 @@ async def project_detail(request: Request, project_id: str, db: MongoDB = Depend
             "request": request,
             "error": str(e)
         })
+        
+@router.get("/team-analytics", response_class=HTMLResponse)
+async def team_analytics_view(request: Request):
+    """Vista de analytics del equipo"""
+    return templates.TemplateResponse("team_analytics.html", {"request": request})

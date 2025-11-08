@@ -200,3 +200,47 @@ async def get_project_data(project_id: str, db: MongoDB = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching project data: {str(e)}")
+
+@router.get("/api/team-metrics")
+async def get_team_metrics():
+    """API para métricas del equipo"""
+    try:
+        from services.assignment_service import AssignmentService
+        service = AssignmentService()
+        metrics = service.get_team_metrics()
+        return metrics.dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching team metrics: {str(e)}")
+
+@router.get("/api/member-metrics")
+async def get_member_metrics():
+    """API para métricas por miembro"""
+    try:
+        from services.assignment_service import AssignmentService
+        service = AssignmentService()
+        team_metrics = service.get_team_metrics()
+        
+        members_data = []
+        for member in service.team_members.values():
+            members_data.append({
+                "slack_id": member.slack_id,
+                "name": member.name,
+                "current_tasks": member.current_tasks,
+                "completed_tasks": member.completed_tasks,
+                "weekly_capacity": member.weekly_capacity,
+                "current_weekly_hours": member.current_weekly_hours,
+                "utilization": (member.current_weekly_hours / member.weekly_capacity) * 100,
+                "success_rate": member.success_rate,
+                "avg_completion_time": member.avg_completion_time,
+                "available": member.available,
+                "skills": member.skills,
+                "skill_level": member.skill_level.value
+            })
+        
+        return {
+            "team_overview": team_metrics.dict(),
+            "members": members_data
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching member metrics: {str(e)}")
