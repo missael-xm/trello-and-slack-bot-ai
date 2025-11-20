@@ -32,9 +32,9 @@ class AssignmentService:
                 specialization=["backend", "fullstack"]
             ),
             TeamMember(
-                slack_id="U1234567890",
-                name="Ana García", 
-                email="ana@empresa.com",
+                slack_id="U09U6KWK21K",
+                name="Daniela Aduviri", 
+                email="carlos_chilque@outlook.com",
                 skills=["React", "JavaScript", "CSS", "UI/UX", "Figma"],
                 skill_level=SkillLevel.MID,
                 max_tasks=6,
@@ -42,9 +42,9 @@ class AssignmentService:
                 specialization=["frontend", "design"]
             ),
             TeamMember(
-                slack_id="U2345678901",
-                name="Luis Martínez",
-                email="luis@empresa.com",
+                slack_id="U09UDEDJP60",
+                name="Victor Flores",
+                email="carlos_chilque@usmp.pe",
                 skills=["Python", "Django", "PostgreSQL", "Docker", "AWS"],
                 skill_level=SkillLevel.SENIOR,
                 max_tasks=7,
@@ -52,9 +52,9 @@ class AssignmentService:
                 specialization=["backend", "devops"]
             ),
             TeamMember(
-                slack_id="U3456789012", 
-                name="Maria Lopez",
-                email="maria@empresa.com",
+                slack_id="U09UE36P6PN", 
+                name="Bryan Rodríguez",
+                email="chilquecarlos77@gmail.com",
                 skills=["JavaScript", "Vue.js", "CSS", "React", "Testing"],
                 skill_level=SkillLevel.MID,
                 max_tasks=5,

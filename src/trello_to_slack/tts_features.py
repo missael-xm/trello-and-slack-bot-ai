@@ -1,14 +1,12 @@
-# src/trello_to_slack/tts_features.py - CORREGIDO
+# src/trello_to_slack/tts_features.py - IMPORTS CORREGIDOS
 from slack.slack_features import SlackFeatures
 from assistant.ecommerce_assistant import EcommerceAssistant
-# CAMBIAR: from langchain_openai import ChatOpenAI
 from langchain.llms import OpenAI
 from langchain.chat_models import ChatOpenAI
 from typing import Union
 import json
 from datetime import datetime
 from database.mongo_db import MongoDB
-from services.assignment_service import AssignmentService
 
 # IMPORT CORREGIDO - usar la versión de community
 try:
@@ -16,6 +14,15 @@ try:
 except ImportError:
     # Fallback para versiones antiguas
     from langchain.callbacks import get_openai_callback
+
+# NUEVO IMPORT para el servicio de asignación
+try:
+    from services.assignment_service import AssignmentService, AssignmentResult
+except ImportError:
+    # Fallback si el servicio no está disponible
+    print("⚠️  AssignmentService no disponible, usando asignación básica")
+    AssignmentService = None
+    AssignmentResult = None
 
 class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
     """
@@ -48,7 +55,13 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
         self.message = message
         self.slack_message_data = slack_message_data
         self.event_type = event_type
-        self.assignment_service = AssignmentService()
+        
+        # Inicializar servicio de asignación si está disponible
+        if AssignmentService:
+            self.assignment_service = AssignmentService()
+        else:
+            self.assignment_service = None
+            print("⚠️  Servicio de asignación no disponible")
 
     def comment_on_slack(self) -> Union[None, str]:
         """
@@ -95,7 +108,7 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                 return f"Invalid message format: {type(self.message)}"
 
             # 🆕 GUARDAR DATOS DE ANALYTICS ANTES DE ENVIAR A SLACK
-            self._save_analytics_data(translation_data, cb)
+            assigned_tasks = self._save_analytics_data(translation_data, cb)
 
             # Validar si hay tasks para enviar
             if (
@@ -106,7 +119,7 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                 return "No new task requests found"
 
             # Convertir el formato del translator al formato que espera Slack
-            slack_message = self._convert_to_slack_format(translation_data)
+            slack_message = self._convert_to_slack_format(translation_data, assigned_tasks)
             
             print(f"📋 SLACK MESSAGE FORMAT: {slack_message}")
 
@@ -132,23 +145,30 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             traceback.print_exc()
             return f"Error: {str(e)}"
 
-    def _convert_to_slack_format(self, translation_data: dict) -> dict:
+    def _convert_to_slack_format(self, translation_data: dict, assigned_tasks: list = None) -> dict:
         """Convierte el formato y asigna tareas inteligentemente"""
         try:
             tasks_markdown = ""
-            assigned_tasks = []
+            assigned_tasks = assigned_tasks or []
             
             if 'translated_tasks' in translation_data and translation_data['translated_tasks']:
-                for task in translation_data['translated_tasks']:
+                for i, task in enumerate(translation_data['translated_tasks']):
                     if isinstance(task, dict) and 'description' in task:
-                        # ASIGNACIÓN INTELIGENTE
+                        # ASIGNACIÓN INTELIGENTE o BÁSICA
                         assignment = self._assign_task_to_member(task)
                         
                         task_text = f"• {task['description']}\n"
-                        task_text += f"  👤 Asignado a: <@{assignment.slack_id}> ({assignment.member_name})\n"
-                        task_text += f"  🎯 Confianza: {assignment.confidence_score:.0%}\n"
-                        task_text += f"  ⏱️ Estimado: {assignment.estimated_completion_time}h\n"
-                        task_text += f"  📋 Razón: {assignment.reason}\n"
+                        
+                        if assignment and hasattr(assignment, 'slack_id'):
+                            # Asignación inteligente disponible
+                            task_text += f"  👤 Asignado a: <@{assignment.slack_id}> ({assignment.member_name})\n"
+                            task_text += f"  🎯 Confianza: {getattr(assignment, 'confidence_score', 0):.0%}\n"
+                            task_text += f"  ⏱️ Estimado: {getattr(assignment, 'estimated_completion_time', 0)}h\n"
+                            task_text += f"  📋 Razón: {getattr(assignment, 'reason', 'asignación automática')}\n"
+                            assigned_tasks.append(assignment)
+                        else:
+                            # Asignación básica (fallback)
+                            task_text += f"  👤 *Por asignar* (sistema de asignación no disponible)\n"
                         
                         if 'category' in task:
                             task_text += f"  📁 Categoría: {task['category']}\n"
@@ -158,19 +178,22 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                             task_text += f"  🧩 Complejidad: {task['complexity']}\n"
                         
                         tasks_markdown += task_text + "\n"
-                        assigned_tasks.append(assignment)
             
-            # Agregar resumen del equipo
-            team_metrics = self.assignment_service.get_team_metrics()
-            summary = f"*Resumen del Equipo:*\n"
-            summary += f"• Miembros disponibles: {team_metrics.available_members}/{team_metrics.total_members}\n"
-            summary += f"• Tareas asignadas: {team_metrics.total_tasks_assigned}\n"
-            summary += f"• Tasa de completación: {team_metrics.completion_rate:.1f}%\n"
-            
-            if team_metrics.busy_members:
-                summary += f"• Miembros muy ocupados: {len(team_metrics.busy_members)}\n"
-            
-            tasks_markdown = summary + "\n" + tasks_markdown
+            # Agregar resumen del equipo si el servicio está disponible
+            if self.assignment_service:
+                try:
+                    team_metrics = self.assignment_service.get_team_metrics()
+                    summary = f"*Resumen del Equipo:*\n"
+                    summary += f"• Miembros disponibles: {team_metrics.available_members}/{team_metrics.total_members}\n"
+                    summary += f"• Tareas asignadas: {team_metrics.total_tasks_assigned}\n"
+                    summary += f"• Tasa de completación: {team_metrics.completion_rate:.1f}%\n"
+                    
+                    if team_metrics.busy_members:
+                        summary += f"• Miembros muy ocupados: {len(team_metrics.busy_members)}\n"
+                    
+                    tasks_markdown = summary + "\n" + tasks_markdown
+                except Exception as e:
+                    print(f"⚠️  Error obteniendo métricas del equipo: {e}")
             
             # Usar el summary como título o crear uno por defecto
             title = translation_data.get('summary', 'Tareas de desarrollo asignadas')
@@ -178,7 +201,7 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             return {
                 'title': title,
                 'tasks': tasks_markdown.strip(),
-                'assigned_tasks': assigned_tasks  # Para analytics
+                'assigned_tasks': assigned_tasks
             }
             
         except Exception as e:
@@ -187,41 +210,51 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                 'title': 'Tareas de desarrollo',
                 'tasks': 'Error procesando las tareas'
             }
-
-    def _assign_task_to_member(self, task: dict) -> AssignmentResult:
+    
+    def _assign_task_to_member(self, task: dict):
         """Asignar tarea a miembro del equipo"""
-        required_skills = task.get('required_skills', [])
-        complexity = task.get('complexity', 'moderada')
-        
-        # Calcular horas estimadas
-        estimated_hours = 4.0  # default
-        if 'time_estimate' in task and isinstance(task['time_estimate'], dict):
-            time_est = task['time_estimate']
-            if 'realistic' in time_est:
-                estimated_hours = time_est['realistic']
-        
-        return self.assignment_service.assign_task(
-            task=task,
-            required_skills=required_skills,
-            complexity=complexity,
-            estimated_hours=estimated_hours
-        )
+        if not self.assignment_service:
+            # Fallback si el servicio no está disponible
+            return None
+            
+        try:
+            required_skills = task.get('required_skills', [])
+            complexity = task.get('complexity', 'moderada')
+            
+            # Calcular horas estimadas
+            estimated_hours = 4.0  # default
+            if 'time_estimate' in task and isinstance(task['time_estimate'], dict):
+                time_est = task['time_estimate']
+                if 'realistic' in time_est:
+                    estimated_hours = time_est['realistic']
+            
+            return self.assignment_service.assign_task(
+                task=task,
+                required_skills=required_skills,
+                complexity=complexity,
+                estimated_hours=estimated_hours
+            )
+        except Exception as e:
+            print(f"❌ Error en asignación inteligente: {e}")
+            return None
 
-    def _save_analytics_data(self, translation_data: dict, openai_callback) -> None:
+    def _save_analytics_data(self, translation_data: dict, openai_callback) -> list:
         """
         Guarda datos de analytics con métricas por persona
         """
+        assigned_tasks = []
+        
         try:
             # Solo guardar si hay tareas válidas
             if not isinstance(translation_data, dict) or not translation_data.get('translated_tasks'):
                 print("📊 No analytics data to save (no valid tasks)")
-                return
+                return assigned_tasks
 
             # Calcular métricas básicas
             tasks = translation_data.get('translated_tasks', [])
             total_tasks = len(tasks)
             
-            # Calcular horas totales estimadas (usando realistic estimate si está disponible)
+            # Calcular horas totales estimadas
             total_estimated_hours = 0
             for task in tasks:
                 if isinstance(task, dict) and 'time_estimate' in task:
@@ -229,8 +262,7 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                     if isinstance(time_est, dict) and 'realistic' in time_est:
                         total_estimated_hours += time_est['realistic']
                     else:
-                        # Estimación por defecto basada en complejidad
-                        total_estimated_hours += 4.0  # 4 horas por defecto
+                        total_estimated_hours += 4.0
 
             # Obtener información del solicitante CORREGIDA
             requested_by = "unknown"
@@ -243,32 +275,11 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                 recent_comment_text = getattr(self.main_data, 'comment', '')
             else:
                 # Fallback si no hay main_data
-                requested_by = getattr(self, 'recent_comment', 'unknown').split('author: ')[-1].split(' -')[0] if 'author:' in getattr(self, 'recent_comment', '') else 'unknown'
-
-            member_metrics = {}
-            team_metrics = self.assignment_service.get_team_metrics()
-
-            for member in self.assignment_service.team_members.values():
-                member_metrics[member.slack_id] = {
-                    "name": member.name,
-                    "current_tasks": member.current_tasks,
-                    "completed_tasks": member.completed_tasks,
-                    "weekly_capacity": member.weekly_capacity,
-                    "current_weekly_hours": member.current_weekly_hours,
-                    "success_rate": member.success_rate,
-                    "avg_completion_time": member.avg_completion_time,
-                    "available": member.available,
-                    "skills": member.skills,
-                    "skill_level": member.skill_level.value
-                }
-
-            analytics_data.update({
-                "team_metrics": team_metrics.dict(),
-                "member_metrics": member_metrics,
-                "assignment_details": [task.dict() for task in (assigned_tasks or [])],
-                "workload_distribution": team_metrics.workload_distribution,
-                "skill_coverage": team_metrics.skill_coverage
-            })
+                recent_comment = getattr(self, 'recent_comment', '')
+                if 'author:' in recent_comment:
+                    requested_by = recent_comment.split('author: ')[-1].split(' -')[0]
+                else:
+                    requested_by = 'unknown'
 
             # Preparar datos para analytics
             analytics_data = {
@@ -299,16 +310,56 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
                 "last_analysis_update": datetime.utcnow()
             }
 
+            # AGREGAR MÉTRICAS DEL EQUIPO SI ESTÁ DISPONIBLE
+            if self.assignment_service:
+                try:
+                    team_metrics = self.assignment_service.get_team_metrics()
+                    
+                    # Obtener métricas por miembro
+                    member_metrics = {}
+                    for member in self.assignment_service.team_members.values():
+                        member_metrics[member.slack_id] = {
+                            "name": member.name,
+                            "current_tasks": member.current_tasks,
+                            "completed_tasks": member.completed_tasks,
+                            "weekly_capacity": member.weekly_capacity,
+                            "current_weekly_hours": member.current_weekly_hours,
+                            "success_rate": member.success_rate,
+                            "avg_completion_time": member.avg_completion_time,
+                            "available": member.available,
+                            "skills": member.skills,
+                            "skill_level": member.skill_level.value
+                        }
+                    
+                    # Obtener tareas asignadas para este proyecto
+                    for task in tasks:
+                        assignment = self._assign_task_to_member(task)
+                        if assignment:
+                            assigned_tasks.append(assignment)
+                    
+                    analytics_data.update({
+                        "team_metrics": team_metrics.dict() if hasattr(team_metrics, 'dict') else {},
+                        "member_metrics": member_metrics,
+                        "assignment_details": [task.dict() for task in assigned_tasks] if assigned_tasks else [],
+                        "workload_distribution": team_metrics.workload_distribution if hasattr(team_metrics, 'workload_distribution') else {},
+                        "skill_coverage": team_metrics.skill_coverage if hasattr(team_metrics, 'skill_coverage') else {}
+                    })
+                except Exception as e:
+                    print(f"⚠️  Error agregando métricas del equipo: {e}")
+
             # Guardar en MongoDB
             db = MongoDB()
             db.analytics_collection.insert_one(analytics_data)
             print(f"✅ Analytics data saved for project: {analytics_data['project_id']}")
             print(f"📊 Saved {total_tasks} tasks, {total_estimated_hours} estimated hours")
             
+            return assigned_tasks
+            
         except Exception as e:
             print(f"❌ Error saving analytics data: {e}")
             import traceback
             traceback.print_exc()
+            return assigned_tasks
 
     # 🆕 MÉTODOS AUXILIARES PARA CÁLCULOS DE ANALYTICS
     def _calculate_average_complexity(self, tasks: list) -> str:
