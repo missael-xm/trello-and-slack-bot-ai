@@ -1,166 +1,152 @@
-// src/dashboard/static/js/analytics.js - CÓDIGO COMPLETO Y CORREGIDO
+// src/dashboard/static/js/analytics.js
 let charts = {};
 
 async function loadCharts() {
     const period = document.getElementById('periodSelect').value;
-    
     try {
-        // Cargar datos de las APIs
-        const [metrics, categories, priorities, complexity, timeline, skills] = await Promise.all([
-            fetch(`/dashboard/api/metrics?days=${period}`).then(r => r.json()),
-            fetch(`/dashboard/api/categories?days=${period}`).then(r => r.json()),
-            fetch(`/dashboard/api/priorities?days=${period}`).then(r => r.json()),
-            fetch(`/dashboard/api/complexity?days=${period}`).then(r => r.json()),
-            fetch(`/dashboard/api/timeline?days=${period}`).then(r => r.json()),
-            fetch(`/dashboard/api/skills?days=${period}`).then(r => r.json())
+        const fetchSafe = (url) => fetch(url).then(r => r.json()).catch(() => ({}));
+        
+        const [metrics, categories, priorities, complexity, timeline, skills, teamMetrics] = await Promise.all([
+            fetchSafe(`/dashboard/api/metrics?days=${period}`),
+            fetchSafe(`/dashboard/api/categories?days=${period}`),
+            fetchSafe(`/dashboard/api/priorities?days=${period}`),
+            fetchSafe(`/dashboard/api/complexity?days=${period}`),
+            fetchSafe(`/dashboard/api/timeline?days=${period}`),
+            fetchSafe(`/dashboard/api/skills?days=${period}`),
+            fetchSafe(`/dashboard/api/team-metrics`)
         ]);
 
-        // Destruir gráficas existentes para evitar superposición
-        Object.values(charts).forEach(chart => {
-            if (chart) chart.destroy();
-        });
+        Object.values(charts).forEach(c => { if(c) c.destroy(); });
 
-        // Crear nuevas gráficas
         createCategoryChart(categories);
         createPriorityChart(priorities);
         createComplexityChart(complexity);
         createSkillsChart(skills);
-        createTimelineChart(timeline);
+        createTimelineChart(Array.isArray(timeline) ? timeline : []);
+        
         updateMetrics(metrics);
+        // Si existe función de team summary en esta página, llamarla
+        if (typeof updateTeamSummary === 'function' && teamMetrics) {
+            updateTeamSummary(teamMetrics);
+        }
 
-    } catch (error) {
-        console.error('Error loading charts:', error);
-    }
+    } catch (error) { console.error('Error loading charts:', error); }
 }
 
-function createCategoryChart(categories) {
-    const ctx = document.getElementById('categoryChart').getContext('2d');
+function createCategoryChart(data) {
+    const ctx = document.getElementById('categoryChart');
+    if(!ctx) return;
     
-    charts.category = new Chart(ctx, {
+    charts.category = new Chart(ctx.getContext('2d'), {
         type: 'doughnut',
         data: {
-            labels: Object.keys(categories).map(key => key.replace('_', ' ')),
+            labels: Object.keys(data || {}),
             datasets: [{
-                data: Object.values(categories),
-                backgroundColor: [
-                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-                    '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
-                ],
-                borderWidth: 2,
-                borderColor: '#fff'
+                data: Object.values(data || {}),
+                backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'],
+                borderWidth: 0
             }]
         },
         options: {
             responsive: true,
-            plugins: {
-                legend: { position: 'right' }
-            }
+            maintainAspectRatio: false, // CRÍTICO para evitar estiramiento
+            plugins: { legend: { position: 'right' } }
         }
     });
 }
 
-function createPriorityChart(priorities) {
-    const ctx = document.getElementById('priorityChart').getContext('2d');
+function createPriorityChart(data) {
+    const ctx = document.getElementById('priorityChart');
+    if(!ctx) return;
     
-    charts.priority = new Chart(ctx, {
+    const labels = ['Alta', 'Media', 'Baja'];
+    const values = labels.map(l => (data || {})[l] || 0);
+    
+    charts.priority = new Chart(ctx.getContext('2d'), {
         type: 'bar',
         data: {
-            labels: Object.keys(priorities),
+            labels: labels,
             datasets: [{
                 label: 'Tareas',
-                data: Object.values(priorities),
-                backgroundColor: [
-                    '#DC2626', '#EA580C', '#D97706', '#059669'
-                ],
-                borderWidth: 0,
+                data: values,
+                backgroundColor: ['#EF4444', '#F59E0B', '#10B981'],
                 borderRadius: 4
             }]
         },
         options: {
             responsive: true,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: { stepSize: 1 }
-                }
-            }
+            maintainAspectRatio: false, // CRÍTICO
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
         }
     });
 }
 
-function createComplexityChart(complexityData) {
-    const ctx = document.getElementById('complexityChart').getContext('2d');
+function createComplexityChart(data) {
+    const ctx = document.getElementById('complexityChart');
+    if(!ctx) return;
     
-    charts.complexity = new Chart(ctx, {
+    const dist = (data || {}).complexity_distribution || {};
+    
+    charts.complexity = new Chart(ctx.getContext('2d'), {
         type: 'pie',
         data: {
-            labels: Object.keys(complexityData.complexity_distribution).map(key => key.replace('_', ' ')),
+            labels: Object.keys(dist),
             datasets: [{
-                data: Object.values(complexityData.complexity_distribution),
+                data: Object.values(dist),
                 backgroundColor: ['#10B981', '#3B82F6', '#8B5CF6', '#EF4444'],
-                borderWidth: 2,
-                borderColor: '#fff'
+                borderWidth: 0
             }]
         },
         options: {
             responsive: true,
-            plugins: {
-                legend: { position: 'bottom' }
-            }
+            maintainAspectRatio: false, // CRÍTICO
+            plugins: { legend: { position: 'bottom' } }
         }
     });
 }
 
-// --- CORRECCIÓN IMPORTANTE AQUÍ ---
 function createSkillsChart(skills) {
-    const ctx = document.getElementById('skillsChart').getContext('2d');
+    const ctx = document.getElementById('skillsChart');
+    if(!ctx) return;
     
-    charts.skills = new Chart(ctx, {
-        type: 'bar', // Usar 'bar' en lugar de 'horizontalBar'
+    const sorted = Object.entries(skills || {}).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    
+    charts.skills = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
         data: {
-            labels: Object.keys(skills),
+            labels: sorted.map(s=>s[0]),
             datasets: [{
                 label: 'Frecuencia',
-                data: Object.values(skills),
+                data: sorted.map(s=>s[1]),
                 backgroundColor: '#8B5CF6',
-                borderWidth: 0,
                 borderRadius: 4
             }]
         },
         options: {
-            indexAxis: 'y', // ESTO HACE QUE SEA HORIZONTAL
+            indexAxis: 'y',
             responsive: true,
-            plugins: {
-                legend: { display: false }
-            },
-            scales: {
-                x: {
-                    beginAtZero: true,
-                    ticks: { stepSize: 1 }
-                }
-            }
+            maintainAspectRatio: false, // CRÍTICO
+            plugins: { legend: { display: false } },
+            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
         }
     });
 }
 
 function createTimelineChart(timeline) {
-    const ctx = document.getElementById('timelineChart').getContext('2d');
+    const ctx = document.getElementById('timelineChart');
+    if(!ctx) return;
     
-    const dates = [...new Set(timeline.map(item => item.request_date?.split('T')[0]))].sort();
-    const projectsByDate = dates.map(date => 
-        timeline.filter(item => item.request_date?.startsWith(date)).length
-    );
-
-    charts.timeline = new Chart(ctx, {
+    const dates = [...new Set(timeline.map(t => t.request_date?.split('T')[0]))].sort();
+    const counts = dates.map(d => timeline.filter(t => t.request_date?.startsWith(d)).length);
+    
+    charts.timeline = new Chart(ctx.getContext('2d'), {
         type: 'line',
         data: {
             labels: dates,
             datasets: [{
                 label: 'Proyectos',
-                data: projectsByDate,
+                data: counts,
                 borderColor: '#3B82F6',
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
                 tension: 0.4,
@@ -169,59 +155,53 @@ function createTimelineChart(timeline) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false, // CRÍTICO
             plugins: { legend: { display: false } },
-            scales: {
-                y: { beginAtZero: true, ticks: { stepSize: 1 } }
-            }
+            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
         }
     });
 }
 
-function updateMetrics(metrics) {
-    // Actualizar métricas de eficiencia
-    const efficiencyHtml = `
-        <div class="flex justify-between items-center py-2 border-b border-gray-200">
-            <span class="text-gray-600">Tasa de Éxito</span>
-            <span class="font-semibold text-green-600">${metrics.success_rate}%</span>
-        </div>
-        <div class="flex justify-between items-center py-2 border-b border-gray-200">
-            <span class="text-gray-600">Promedio Tareas/Proyecto</span>
-            <span class="font-semibold text-blue-600">${metrics.average_tasks_per_project}</span>
-        </div>
-        <div class="flex justify-between items-center py-2">
-            <span class="text-gray-600">Promedio Horas/Proyecto</span>
-            <span class="font-semibold text-purple-600">${metrics.average_hours_per_project}h</span>
-        </div>
-    `;
-    
-    const effElement = document.getElementById('efficiencyMetrics');
-    if (effElement) effElement.innerHTML = efficiencyHtml;
+function updateMetrics(m) {
+    // Actualizar resumen de eficiencia (lado izquierdo)
+    const effEl = document.getElementById('efficiencyMetrics');
+    if(effEl) {
+        effEl.innerHTML = `
+            <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                <span class="text-gray-600">Tasa de Éxito</span>
+                <span class="font-semibold text-green-600">${m.success_rate||0}%</span>
+            </div>
+            <div class="flex justify-between items-center py-2 border-b border-gray-200">
+                <span class="text-gray-600">Tareas/Proy</span>
+                <span class="font-semibold text-blue-600">${m.average_tasks_per_project||0}</span>
+            </div>
+            <div class="flex justify-between items-center py-2">
+                <span class="text-gray-600">Horas/Proy</span>
+                <span class="font-semibold text-purple-600">${m.average_hours_per_project||0}h</span>
+            </div>`;
+    }
 
-    // Actualizar métricas de resumen
-    const summaryHtml = `
-        <div class="text-center p-4 bg-blue-50 rounded-lg">
-            <div class="text-2xl font-bold text-blue-600">${metrics.total_projects}</div>
-            <div class="text-sm text-blue-800">Total Proyectos</div>
-        </div>
-        <div class="text-center p-4 bg-green-50 rounded-lg">
-            <div class="text-2xl font-bold text-green-600">${metrics.total_tasks}</div>
-            <div class="text-sm text-green-800">Total Tareas</div>
-        </div>
-        <div class="text-center p-4 bg-purple-50 rounded-lg">
-            <div class="text-2xl font-bold text-purple-600">${metrics.total_estimated_hours}</div>
-            <div class="text-sm text-purple-800">Horas Estimadas</div>
-        </div>
-        <div class="text-center p-4 bg-orange-50 rounded-lg">
-            <div class="text-2xl font-bold text-orange-600">${metrics.completed_projects}</div>
-            <div class="text-sm text-orange-800">Completados</div>
-        </div>
-    `;
-    
-    const sumElement = document.getElementById('summaryMetrics');
-    if (sumElement) sumElement.innerHTML = summaryHtml;
+    // Actualizar tarjetas de resumen (lado derecho)
+    const sumEl = document.getElementById('summaryMetrics');
+    if(sumEl) {
+        sumEl.innerHTML = `
+            <div class="text-center p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <div class="text-2xl font-bold text-blue-600">${m.total_projects||0}</div>
+                <div class="text-xs text-blue-800 font-medium mt-1">Proyectos</div>
+            </div>
+            <div class="text-center p-4 bg-green-50 rounded-lg border border-green-100">
+                <div class="text-2xl font-bold text-green-600">${m.total_tasks||0}</div>
+                <div class="text-xs text-green-800 font-medium mt-1">Tareas</div>
+            </div>
+            <div class="text-center p-4 bg-purple-50 rounded-lg border border-purple-100">
+                <div class="text-2xl font-bold text-purple-600">${m.total_estimated_hours||0}h</div>
+                <div class="text-xs text-purple-800 font-medium mt-1">Horas</div>
+            </div>
+            <div class="text-center p-4 bg-orange-50 rounded-lg border border-orange-100">
+                <div class="text-2xl font-bold text-orange-600">${m.completed_projects||0}</div>
+                <div class="text-xs text-orange-800 font-medium mt-1">Completados</div>
+            </div>`;
+    }
 }
 
-// Cargar inicial
 document.addEventListener('DOMContentLoaded', loadCharts);
-// Auto-refresh cada 5 minutos
-setInterval(loadCharts, 300000);

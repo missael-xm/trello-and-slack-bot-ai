@@ -1,4 +1,4 @@
-# src/assistant/ecommerce_assistant.py - CORREGIDO CON RATE LIMIT HANDLING
+# src/assistant/ecommerce_assistant.py
 from langchain.llms import OpenAI
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import SequentialChain
@@ -10,7 +10,7 @@ from trello.trello_requests import TrelloRequests
 from database.mongo_db import MongoDB
 from typing import Union
 import json
-import time # NUEVO: Para controlar el rate limit
+import time
 
 class EcommerceAssistant(TrelloRequests, MongoDB):
     """
@@ -86,20 +86,26 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
                     return_only_outputs=True
                 )
 
-                if len(output['conversation_context']['context']) == 0:
+                # FIX: Manejar tanto Objeto Pydantic como Diccionario
+                ctx_result = output['conversation_context']
+                if hasattr(ctx_result, 'dict'):
+                    ctx_data = ctx_result.dict()
+                else:
+                    ctx_data = ctx_result
+
+                # Validar contenido
+                if not ctx_data.get('context') or len(ctx_data['context']) == 0:
                     return None
                 else:
-                    return output['conversation_context']['context']
+                    return ctx_data['context']
                     
         except Exception as e:
             print(f"❌ Error in get_context_by_event_type: {e}")
-            # No imprimimos traceback completo aquí para no ensuciar logs si es un rate limit
             return None
 
     def get_answer(self, event_type: str) -> dict:
         """Ejecuta la cadena secuencial completa de IA con control de Rate Limit"""
         try:
-            # Paso 1: Obtener Contexto (Consume 1 request)
             print("🔄 Paso 1: Obteniendo contexto...")
             new_context = self.get_context_by_event_type(event_type=event_type)
 
@@ -107,13 +113,10 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
             if new_context is None or len(new_context) == 0:
                 return {"translation": {"translated_tasks": [], "summary": "No relevant information", "notes": ""}}
 
-            # 🛑 PAUSA OBLIGATORIA: Evitar error 429 (Rate Limit)
-            # Tu límite es 3 RPM. Ya usamos 1. Faltan 2 llamadas más en la cadena.
-            # Pausamos 21 segundos para asegurar que el "bucket" de OpenAI se recargue.
+            # 🛑 PAUSA OBLIGATORIA (Rate Limit)
             print("⏳ Esperando 21s para respetar límite de OpenAI (3 RPM)...")
             time.sleep(21)
 
-            # Paso 2: Ejecutar Cadena Secuencial (Consume 2 requests internamente)
             print("🔄 Paso 2: Ejecutando análisis y traducción...")
             
             overall_chain = SequentialChain(
@@ -124,8 +127,8 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
                     'output_language'
                 ],
                 chains=[
-                    generate_tasks(llm=self.llm),       # Request 2
-                    translate_text_string(llm=self.llm), # Request 3
+                    generate_tasks(llm=self.llm),
+                    translate_text_string(llm=self.llm),
                 ],
                 output_variables=['translate_output'],
                 verbose=True
@@ -145,7 +148,6 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
                 if "Rate limit" in str(chain_error):
                     print("⚠️ Rate limit alcanzado de nuevo. Reintentando en 30s...")
                     time.sleep(30)
-                    # Reintento único
                     result = overall_chain.invoke(
                         input={
                             "conversation_context": new_context,
@@ -158,15 +160,14 @@ class EcommerceAssistant(TrelloRequests, MongoDB):
                 else:
                     raise chain_error
 
-            # Asegurar que devolvemos un diccionario
             output = result["translate_output"]
+            # Asegurar que devolvemos un diccionario, no un objeto Pydantic
             if hasattr(output, 'dict'): 
                 return output.dict()
             return output
 
         except Exception as e:
             print(f"❌ Error in get_answer: {e}")
-            # Solo si es crítico
             if "Rate limit" not in str(e):
                 import traceback
                 traceback.print_exc()

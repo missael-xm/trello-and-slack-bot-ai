@@ -8,9 +8,8 @@
     <p class="text-gray-600">Métricas y estadísticas del sistema</p>
 </div>
 
-<!-- Filters -->
 <div class="chart-container p-6 mb-6">
-    <div class="flex flex-wrap gap-4 items-center">
+    <div class="flex flex-wrap gap-4 items-center justify-between">
         <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Período</label>
             <select id="periodSelect" onchange="loadCharts()" class="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -19,71 +18,64 @@
                 <option value="90">Últimos 90 días</option>
             </select>
         </div>
-        <div>
-            <button onclick="loadCharts()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm mt-6">
-                <i class="fas fa-sync-alt mr-2"></i>Actualizar Gráficas
-            </button>
+        <button onclick="loadCharts()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm flex items-center">
+            <i class="fas fa-sync-alt mr-2"></i>Actualizar
+        </button>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <div class="chart-container p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribución por Categoría</h3>
+        <div class="h-64 relative w-full">
+            <canvas id="categoryChart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-container p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribución por Prioridad</h3>
+        <div class="h-64 relative w-full">
+            <canvas id="priorityChart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-container p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Análisis de Complejidad</h3>
+        <div class="h-64 relative w-full">
+            <canvas id="complexityChart"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-container p-6">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Habilidades Más Demandadas</h3>
+        <div class="h-64 relative w-full">
+            <canvas id="skillsChart"></canvas>
         </div>
     </div>
 </div>
 
-<!-- Charts Grid -->
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-    <!-- Category Distribution -->
-    <div class="chart-container p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribución por Categoría</h3>
-        <canvas id="categoryChart" height="250"></canvas>
-    </div>
-
-    <!-- Priority Distribution -->
-    <div class="chart-container p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribución por Prioridad</h3>
-        <canvas id="priorityChart" height="250"></canvas>
-    </div>
-
-    <!-- Complexity Analysis -->
-    <div class="chart-container p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Análisis de Complejidad</h3>
-        <canvas id="complexityChart" height="250"></canvas>
-    </div>
-
-    <!-- Skills Demand -->
-    <div class="chart-container p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Habilidades Más Demandadas</h3>
-        <canvas id="skillsChart" height="250"></canvas>
-    </div>
-</div>
-
-<!-- Timeline Chart -->
 <div class="chart-container p-6 mb-8">
     <h3 class="text-lg font-semibold text-gray-800 mb-4">Línea de Tiempo de Proyectos</h3>
-    <canvas id="timelineChart" height="150"></canvas>
+    <div class="h-72 relative w-full">
+        <canvas id="timelineChart"></canvas>
+    </div>
 </div>
 
-<!-- Detailed Metrics -->
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <div class="chart-container p-6">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">Eficiencia del Sistema</h3>
         <div id="efficiencyMetrics" class="space-y-3">
-            <!-- Se llenará dinámicamente -->
-        </div>
+            </div>
     </div>
     
     <div class="chart-container p-6 md:col-span-2">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">Resumen de Métricas</h3>
         <div id="summaryMetrics" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <!-- Se llenará dinámicamente -->
-        </div>
+            </div>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/analytics.js"></script>
-<script>
-// Cargar gráficas cuando la página esté lista
-document.addEventListener('DOMContentLoaded', function() {
-    loadCharts();
-});
-</script>
+<script src="{{ url_for('static', path='/js/analytics.js') }}"></script>
 {% endblock %}
