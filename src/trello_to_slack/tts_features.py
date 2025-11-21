@@ -1,33 +1,30 @@
-# src/trello_to_slack/tts_features.py - IMPORTS CORREGIDOS
+# src/trello_to_slack/tts_features.py
 from slack.slack_features import SlackFeatures
 from assistant.ecommerce_assistant import EcommerceAssistant
-from langchain.llms import OpenAI
 from langchain.chat_models import ChatOpenAI
 from typing import Union
 import json
 from datetime import datetime
 from database.mongo_db import MongoDB
 
-# IMPORT CORREGIDO - usar la versión de community
+# Importación segura para callbacks (compatibilidad v1/v2)
 try:
     from langchain_community.callbacks import get_openai_callback
 except ImportError:
-    # Fallback para versiones antiguas
     from langchain.callbacks import get_openai_callback
 
-# NUEVO IMPORT para el servicio de asignación
+# Importación segura del servicio de asignación
 try:
     from services.assignment_service import AssignmentService, AssignmentResult
 except ImportError:
-    # Fallback si el servicio no está disponible
-    print("⚠️  AssignmentService no disponible, usando asignación básica")
+    print("⚠️ AssignmentService no disponible, se usará lógica básica.")
     AssignmentService = None
     AssignmentResult = None
 
 class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
     """
-    Orquestador principal que conecta Trello → IA → Slack.
-    Hereda de SlackFeatures y EcommerceAssistant para tener todas las funcionalidades.
+    Orquestador principal: Trello -> IA -> Asignación -> Slack/DB.
+    Versión FINAL con asignación única por lote y persistencia completa de métricas.
     """
     def __init__(
         self,
@@ -61,69 +58,58 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             self.assignment_service = AssignmentService()
         else:
             self.assignment_service = None
-            print("⚠️  Servicio de asignación no disponible")
 
     def comment_on_slack(self) -> Union[None, str]:
         """
-        Ejecuta la cadena completa de IA y envía el resultado a Slack.
-        Monitorea el costo de OpenAI con get_openai_callback().
+        Ejecuta el flujo completo:
+        1. Obtiene respuesta de la IA (Traducción y tareas).
+        2. Realiza la asignación inteligente (LOTE).
+        3. Guarda métricas completas en MongoDB.
+        4. Envía mensaje formateado a Slack.
         """
         try:
-            # Inicializar callback como None por si falla
             cb = None
-            
-            # Usar try/except para el callback ya que puede fallar en algunas versiones
             try:
-                from langchain_community.callbacks import get_openai_callback
                 with get_openai_callback() as callback:
                     self.message = self.get_answer(event_type=self.event_type)
                     cb = callback
                     print("\nOpenAI Usage Cost:\n", cb, "\n")
-            except ImportError:
-                try:
-                    from langchain.callbacks import get_openai_callback
-                    with get_openai_callback() as callback:
-                        self.message = self.get_answer(event_type=self.event_type)
-                        cb = callback
-                        print("\nOpenAI Usage Cost:\n", cb, "\n")
-                except Exception:
-                    # Si falla el callback, ejecutar sin él
-                    print("⚠️  No se pudo inicializar OpenAI callback, ejecutando sin tracking...")
-                    self.message = self.get_answer(event_type=self.event_type)
+            except Exception as e:
+                print(f"⚠️ Callback error (continuando): {e}")
+                self.message = self.get_answer(event_type=self.event_type)
 
-            # Convertir Pydantic model a dict si es necesario
+            # Asegurar formato diccionario
             if hasattr(self.message, 'dict'):
                 self.message = self.message.dict()
 
-            # Verificar la estructura del mensaje
+            translation_data = {}
             if isinstance(self.message, dict):
-                # Si tiene la clave 'translation', usarla
-                if 'translation' in self.message:
-                    translation_data = self.message['translation']
-                else:
-                    # Si no tiene 'translation', usar el mensaje completo
-                    translation_data = self.message
-            else:
-                print(f"❌ Invalid message format: {type(self.message)}")
-                return f"Invalid message format: {type(self.message)}"
+                translation_data = self.message.get('translation', self.message)
+            
+            # --- PASO CLAVE: ASIGNACIÓN POR LOTE ---
+            tasks = translation_data.get('translated_tasks', [])
+            batch_assignment = None
+            
+            if tasks and self.assignment_service:
+                print(f"🔄 Calculando asignación para lote de {len(tasks)} tareas...")
+                # Asigna todo el grupo de tareas a la mejor persona disponible
+                batch_assignment = self.assignment_service.assign_batch(tasks)
+                if batch_assignment:
+                    print(f"👤 Responsable seleccionado: {batch_assignment.member_name}")
 
-            # 🆕 GUARDAR DATOS DE ANALYTICS ANTES DE ENVIAR A SLACK
-            assigned_tasks = self._save_analytics_data(translation_data, cb)
+            # 1. GUARDAR ANALYTICS (Pasamos la asignación de lote)
+            # Esto guarda horas, riesgos, skills y el responsable en Mongo
+            self._save_analytics_data(translation_data, cb, batch_assignment)
 
-            # Validar si hay tasks para enviar
-            if (
-                isinstance(translation_data, dict) and
-                'translated_tasks' in translation_data and
-                not translation_data['translated_tasks']
-            ):
+            if not tasks:
                 return "No new task requests found"
 
-            # Convertir el formato del translator al formato que espera Slack
-            slack_message = self._convert_to_slack_format(translation_data, assigned_tasks)
+            # 2. GENERAR MENSAJE SLACK (Formato limpio con un solo responsable)
+            slack_message = self._convert_to_slack_format(translation_data, batch_assignment)
             
-            print(f"📋 SLACK MESSAGE FORMAT: {slack_message}")
+            print(f"📋 Enviando a Slack: {slack_message.get('title')}")
 
-            # Enviar a Slack (nuevo mensaje o respuesta en hilo)
+            # 3. ENVIAR A SLACK
             if self.slack_message_data is None:
                 self.new_message(
                     request_id=self.card_id,
@@ -145,363 +131,231 @@ class TrelloToSlackFeatures(SlackFeatures, EcommerceAssistant):
             traceback.print_exc()
             return f"Error: {str(e)}"
 
-    def _convert_to_slack_format(self, translation_data: dict, assigned_tasks: list = None) -> dict:
-        """Convierte el formato y asigna tareas inteligentemente"""
+    def _convert_to_slack_format(self, translation_data: dict, batch_assignment=None) -> dict:
+        """
+        Genera el mensaje de Slack.
+        Muestra al 'Responsable del Proyecto' al inicio y luego lista las tareas.
+        """
         try:
             tasks_markdown = ""
-            assigned_tasks = assigned_tasks or []
+            sanitized_assigned_tasks = []
             
-            if 'translated_tasks' in translation_data and translation_data['translated_tasks']:
-                for i, task in enumerate(translation_data['translated_tasks']):
-                    if isinstance(task, dict) and 'description' in task:
-                        # ASIGNACIÓN INTELIGENTE o BÁSICA
-                        assignment = self._assign_task_to_member(task)
-                        
-                        task_text = f"• {task['description']}\n"
-                        
-                        if assignment and hasattr(assignment, 'slack_id'):
-                            # Asignación inteligente disponible
-                            task_text += f"  👤 Asignado a: <@{assignment.slack_id}> ({assignment.member_name})\n"
-                            task_text += f"  🎯 Confianza: {getattr(assignment, 'confidence_score', 0):.0%}\n"
-                            task_text += f"  ⏱️ Estimado: {getattr(assignment, 'estimated_completion_time', 0)}h\n"
-                            task_text += f"  📋 Razón: {getattr(assignment, 'reason', 'asignación automática')}\n"
-                            assigned_tasks.append(assignment)
-                        else:
-                            # Asignación básica (fallback)
-                            task_text += f"  👤 *Por asignar* (sistema de asignación no disponible)\n"
-                        
-                        if 'category' in task:
-                            task_text += f"  📁 Categoría: {task['category']}\n"
-                        if 'priority' in task:
-                            task_text += f"  🚨 Prioridad: {task['priority']}\n"
-                        if 'complexity' in task:
-                            task_text += f"  🧩 Complejidad: {task['complexity']}\n"
-                        
-                        tasks_markdown += task_text + "\n"
+            # SECCIÓN 1: RESPONSABLE ÚNICO
+            if batch_assignment:
+                tasks_markdown += f"👑 *Responsable del Proyecto:* <@{batch_assignment.slack_id}> ({batch_assignment.member_name})\n"
+                tasks_markdown += f"⏱️ *Carga Total Estimada:* {batch_assignment.estimated_completion_time}h\n"
+                tasks_markdown += "──────────────────────\n"
+                
+                # Guardar para el JSON de retorno (sanitizado)
+                if hasattr(batch_assignment, 'dict'):
+                    sanitized_assigned_tasks.append(batch_assignment.dict())
+                else:
+                    sanitized_assigned_tasks.append(batch_assignment.__dict__)
+
+            # SECCIÓN 2: LISTA DE TAREAS
+            if 'translated_tasks' in translation_data:
+                for task in translation_data['translated_tasks']:
+                    # Descripción principal
+                    task_text = f"• *{task.get('description', 'Tarea sin descripción')}*\n"
+                    
+                    # Detalles técnicos en una línea discreta
+                    details = []
+                    if 'priority' in task:
+                        details.append(f"🚨 {task['priority']}")
+                    if 'time_estimate' in task:
+                        # Manejo robusto de float o dict
+                        val = task['time_estimate']
+                        if isinstance(val, dict): val = val.get('realistic', 4.0)
+                        details.append(f"⏱️ {val}h")
+                    if 'complexity' in task:
+                        details.append(f"🧩 {task['complexity']}")
+                    
+                    if details:
+                        task_text += f"  _({', '.join(details)})_\n"
+                    
+                    tasks_markdown += task_text + "\n"
             
-            # Agregar resumen del equipo si el servicio está disponible
+            # SECCIÓN 3: ESTADO DEL EQUIPO (Pie de página)
             if self.assignment_service:
                 try:
-                    team_metrics = self.assignment_service.get_team_metrics()
-                    summary = f"*Resumen del Equipo:*\n"
-                    summary += f"• Miembros disponibles: {team_metrics.available_members}/{team_metrics.total_members}\n"
-                    summary += f"• Tareas asignadas: {team_metrics.total_tasks_assigned}\n"
-                    summary += f"• Tasa de completación: {team_metrics.completion_rate:.1f}%\n"
-                    
-                    if team_metrics.busy_members:
-                        summary += f"• Miembros muy ocupados: {len(team_metrics.busy_members)}\n"
-                    
-                    tasks_markdown = summary + "\n" + tasks_markdown
-                except Exception as e:
-                    print(f"⚠️  Error obteniendo métricas del equipo: {e}")
-            
-            # Usar el summary como título o crear uno por defecto
-            title = translation_data.get('summary', 'Tareas de desarrollo asignadas')
+                    metrics = self.assignment_service.get_team_metrics()
+                    tasks_markdown += f"\n*📊 Estado Equipo:* {metrics.available_members} disponibles | {metrics.completion_rate:.0f}% completado global"
+                except Exception:
+                    pass
+
+            title = translation_data.get('summary', 'Nuevas Tareas Asignadas')
             
             return {
                 'title': title,
                 'tasks': tasks_markdown.strip(),
-                'assigned_tasks': assigned_tasks
+                'assigned_tasks': sanitized_assigned_tasks
             }
             
         except Exception as e:
-            print(f"❌ Error converting to Slack format: {e}")
+            print(f"❌ Error formatting Slack message: {e}")
             return {
-                'title': 'Tareas de desarrollo',
-                'tasks': 'Error procesando las tareas'
+                'title': 'Error de Formato',
+                'tasks': 'Ocurrió un error al generar el mensaje.',
+                'assigned_tasks': []
             }
-    
-    def _assign_task_to_member(self, task: dict):
-        """Asignar tarea a miembro del equipo"""
-        if not self.assignment_service:
-            # Fallback si el servicio no está disponible
-            return None
-            
-        try:
-            required_skills = task.get('required_skills', [])
-            complexity = task.get('complexity', 'moderada')
-            
-            # Calcular horas estimadas
-            estimated_hours = 4.0  # default
-            if 'time_estimate' in task and isinstance(task['time_estimate'], dict):
-                time_est = task['time_estimate']
-                if 'realistic' in time_est:
-                    estimated_hours = time_est['realistic']
-            
-            return self.assignment_service.assign_task(
-                task=task,
-                required_skills=required_skills,
-                complexity=complexity,
-                estimated_hours=estimated_hours
-            )
-        except Exception as e:
-            print(f"❌ Error en asignación inteligente: {e}")
-            return None
 
-    def _save_analytics_data(self, translation_data: dict, openai_callback) -> list:
+    def _save_analytics_data(self, translation_data: dict, openai_callback, batch_assignment=None) -> list:
         """
-        Guarda datos de analytics con métricas por persona
+        Guarda todos los datos analíticos en MongoDB.
+        Calcula métricas agregadas (riesgo, complejidad) para el dashboard.
         """
-        assigned_tasks = []
-        
         try:
-            # Solo guardar si hay tareas válidas
-            if not isinstance(translation_data, dict) or not translation_data.get('translated_tasks'):
-                print("📊 No analytics data to save (no valid tasks)")
-                return assigned_tasks
-
-            # Calcular métricas básicas
             tasks = translation_data.get('translated_tasks', [])
-            total_tasks = len(tasks)
-            
-            # Calcular horas totales estimadas
-            total_estimated_hours = 0
-            for task in tasks:
-                if isinstance(task, dict) and 'time_estimate' in task:
-                    time_est = task['time_estimate']
-                    if isinstance(time_est, dict) and 'realistic' in time_est:
-                        total_estimated_hours += time_est['realistic']
-                    else:
-                        total_estimated_hours += 4.0
+            if not tasks:
+                return []
 
-            # Obtener información del solicitante CORREGIDA
+            # Calcular total de horas sumando las tareas individuales
+            total_hours = 0
+            for t in tasks:
+                val = t.get('time_estimate', 4.0)
+                if isinstance(val, dict):
+                    val = val.get('realistic', 4.0)
+                try:
+                    total_hours += float(val)
+                except:
+                    total_hours += 4.0
+
+            # Obtener solicitante
             requested_by = "unknown"
-            recent_comment_text = ""
-            
-            # CORREGIDO: Acceso correcto a atributos del objeto Pydantic
-            if hasattr(self, 'main_data') and self.main_data:
-                # main_data es un objeto TrelloActionMainData, no un dict
-                requested_by = getattr(self.main_data, 'username', 'unknown')
-                recent_comment_text = getattr(self.main_data, 'comment', '')
-            else:
-                # Fallback si no hay main_data
-                recent_comment = getattr(self, 'recent_comment', '')
-                if 'author:' in recent_comment:
-                    requested_by = recent_comment.split('author: ')[-1].split(' -')[0]
+            original_comment = ""
+            try:
+                if hasattr(self, 'main_data') and self.main_data:
+                    requested_by = getattr(self.main_data, 'username', 'unknown')
+                    original_comment = getattr(self.main_data, 'comment', '')
                 else:
-                    requested_by = 'unknown'
+                    recent_comment = getattr(self, 'recent_comment', '')
+                    if 'author:' in recent_comment:
+                        requested_by = recent_comment.split('author: ')[-1].split(' -')[0]
+            except:
+                pass
 
-            # Preparar datos para analytics
+            # Preparar detalle de asignación para Mongo
+            analytics_assignments = []
+            if batch_assignment:
+                assignment_dict = batch_assignment.dict() if hasattr(batch_assignment, 'dict') else batch_assignment.__dict__
+                analytics_assignments.append(assignment_dict)
+
+            # Construir documento completo
             analytics_data = {
-                "project_id": f"proj_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{self.card_id[-6:]}",
+                "project_id": f"proj_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{str(self.card_id)[-6:]}",
                 "card_id": self.card_id,
                 "card_title": self.card_title,
                 "requested_by": requested_by,
+                "original_comment": original_comment,
                 "request_date": datetime.utcnow(),
-                "original_comment": recent_comment_text,
-                "total_tasks": total_tasks,
-                "total_estimated_hours": total_estimated_hours,
+                
+                # Métricas cuantitativas
+                "total_tasks": len(tasks),
+                "total_estimated_hours": total_hours,
+                "status": "pending",
+                
+                # Asignación (Líder único)
+                "assigned_lead": batch_assignment.member_name if batch_assignment else "Unassigned",
+                "assigned_lead_id": batch_assignment.slack_id if batch_assignment else None,
+                
+                # Métricas cualitativas (Calculadas con helpers)
                 "average_complexity": self._calculate_average_complexity(tasks),
                 "highest_priority": self._get_highest_priority(tasks),
                 "risk_assessment": self._assess_overall_risk(tasks),
-                "category_distribution": self._calculate_category_distribution(tasks),
-                "priority_distribution": self._calculate_priority_distribution(tasks),
-                "complexity_distribution": self._calculate_complexity_distribution(tasks),
+                
+                # Distribuciones
+                "category_distribution": self._calculate_distribution(tasks, 'category'),
+                "priority_distribution": self._calculate_distribution(tasks, 'priority'),
+                "required_skills": self._extract_skills(tasks),
+                
+                # Datos crudos
                 "tasks": tasks,
-                "required_skills": self._extract_required_skills(tasks),
-                "skill_frequency": self._calculate_skill_frequency(tasks),
-                "status": "pending",
-                "progress_percentage": 0.0,
+                "assignment_details": analytics_assignments,
+                
+                # Metadata IA
                 "ai_model_used": getattr(self.llm, 'model_name', 'unknown'),
-                "processing_time": openai_callback.total_seconds if openai_callback and hasattr(openai_callback, 'total_seconds') else 0,
-                "confidence_score": 0.8,
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
-                "last_analysis_update": datetime.utcnow()
+                "created_at": datetime.utcnow()
             }
 
-            # AGREGAR MÉTRICAS DEL EQUIPO SI ESTÁ DISPONIBLE
-            if self.assignment_service:
-                try:
-                    team_metrics = self.assignment_service.get_team_metrics()
-                    
-                    # Obtener métricas por miembro
-                    member_metrics = {}
-                    for member in self.assignment_service.team_members.values():
-                        member_metrics[member.slack_id] = {
-                            "name": member.name,
-                            "current_tasks": member.current_tasks,
-                            "completed_tasks": member.completed_tasks,
-                            "weekly_capacity": member.weekly_capacity,
-                            "current_weekly_hours": member.current_weekly_hours,
-                            "success_rate": member.success_rate,
-                            "avg_completion_time": member.avg_completion_time,
-                            "available": member.available,
-                            "skills": member.skills,
-                            "skill_level": member.skill_level.value
-                        }
-                    
-                    # Obtener tareas asignadas para este proyecto
-                    for task in tasks:
-                        assignment = self._assign_task_to_member(task)
-                        if assignment:
-                            assigned_tasks.append(assignment)
-                    
-                    analytics_data.update({
-                        "team_metrics": team_metrics.dict() if hasattr(team_metrics, 'dict') else {},
-                        "member_metrics": member_metrics,
-                        "assignment_details": [task.dict() for task in assigned_tasks] if assigned_tasks else [],
-                        "workload_distribution": team_metrics.workload_distribution if hasattr(team_metrics, 'workload_distribution') else {},
-                        "skill_coverage": team_metrics.skill_coverage if hasattr(team_metrics, 'skill_coverage') else {}
-                    })
-                except Exception as e:
-                    print(f"⚠️  Error agregando métricas del equipo: {e}")
-
-            # Guardar en MongoDB
+            # Guardar en Mongo
             db = MongoDB()
-            db.analytics_collection.insert_one(analytics_data)
-            print(f"✅ Analytics data saved for project: {analytics_data['project_id']}")
-            print(f"📊 Saved {total_tasks} tasks, {total_estimated_hours} estimated hours")
-            
-            return assigned_tasks
+            if db.analytics_collection is not None:
+                db.analytics_collection.insert_one(analytics_data)
+                print(f"✅ Analytics SAVED: {analytics_data['project_id']} ({total_hours}h)")
+
+            return analytics_assignments
             
         except Exception as e:
-            print(f"❌ Error saving analytics data: {e}")
+            print(f"❌ Error saving analytics: {e}")
             import traceback
             traceback.print_exc()
-            return assigned_tasks
+            return []
 
-    # 🆕 MÉTODOS AUXILIARES PARA CÁLCULOS DE ANALYTICS
+    # --- HELPERS PARA CÁLCULOS DE ANALYTICS ---
+
     def _calculate_average_complexity(self, tasks: list) -> str:
-        """Calcula la complejidad promedio de las tareas"""
-        if not tasks:
-            return "simple"
-        
-        complexity_values = {
-            "simple": 1,
-            "moderada": 2, 
-            "compleja": 3,
-            "muy_compleja": 4
-        }
+        """Promedia la complejidad numérica y devuelve etiqueta"""
+        if not tasks: return "simple"
+        mapping = {'simple': 1, 'moderada': 2, 'compleja': 3, 'muy_compleja': 4}
         
         total = 0
-        count = 0
-        
-        for task in tasks:
-            if isinstance(task, dict) and 'complexity' in task:
-                complexity = task['complexity']
-                if complexity in complexity_values:
-                    total += complexity_values[complexity]
-                    count += 1
-        
-        if count == 0:
-            return "simple"
-        
-        average = total / count
-        
-        if average < 1.5:
-            return "simple"
-        elif average < 2.5:
-            return "moderada"
-        elif average < 3.5:
-            return "compleja"
-        else:
-            return "muy_compleja"
-
-    def _get_highest_priority(self, tasks: list) -> str:
-        """Obtiene la prioridad más alta entre las tareas"""
-        if not tasks:
-            return "media"
-        
-        priority_values = {
-            "baja": 1,
-            "media": 2,
-            "alta": 3, 
-            "crítica": 4
-        }
-        
-        highest_priority = "media"
-        highest_value = 0
-        
-        for task in tasks:
-            if isinstance(task, dict) and 'priority' in task:
-                priority = task['priority']
-                if priority in priority_values and priority_values[priority] > highest_value:
-                    highest_value = priority_values[priority]
-                    highest_priority = priority
-        
-        return highest_priority
+        for t in tasks:
+            c = t.get('complexity', 'moderada')
+            total += mapping.get(c, 2)
+            
+        avg = total / len(tasks)
+        if avg <= 1.5: return "simple"
+        if avg <= 2.5: return "moderada"
+        if avg <= 3.5: return "compleja"
+        return "muy_compleja"
 
     def _assess_overall_risk(self, tasks: list) -> str:
-        """Evalúa el riesgo general del proyecto"""
-        if not tasks:
-            return "bajo"
+        """Calcula riesgo basado en tareas críticas/complejas"""
+        if not tasks: return "bajo"
+        high_pri = 0
+        complex_tasks = 0
         
-        high_priority_count = 0
-        complex_count = 0
+        for t in tasks:
+            if t.get('priority') in ['alta', 'crítica']: high_pri += 1
+            if t.get('complexity') in ['compleja', 'muy_compleja']: complex_tasks += 1
+            
+        ratio_high = high_pri / len(tasks)
+        ratio_complex = complex_tasks / len(tasks)
         
-        for task in tasks:
-            if isinstance(task, dict):
-                if task.get('priority') in ['alta', 'crítica']:
-                    high_priority_count += 1
-                if task.get('complexity') in ['compleja', 'muy_compleja']:
-                    complex_count += 1
-        
-        total_tasks = len(tasks)
-        high_priority_ratio = high_priority_count / total_tasks
-        complex_ratio = complex_count / total_tasks
-        
-        if high_priority_ratio > 0.5 or complex_ratio > 0.7:
-            return "alto"
-        elif high_priority_ratio > 0.3 or complex_ratio > 0.4:
-            return "medio"
-        else:
-            return "bajo"
+        if ratio_high > 0.5 or ratio_complex > 0.5: return "alto"
+        if ratio_high > 0.2 or ratio_complex > 0.2: return "medio"
+        return "bajo"
 
-    def _calculate_category_distribution(self, tasks: list) -> dict:
-        """Calcula la distribución de tareas por categoría"""
-        distribution = {}
+    def _get_highest_priority(self, tasks: list) -> str:
+        """Encuentra la prioridad máxima"""
+        if not tasks: return "media"
+        priority_map = {'baja': 1, 'media': 2, 'alta': 3, 'crítica': 4}
+        max_p = 0
+        max_label = "media"
         
-        for task in tasks:
-            if isinstance(task, dict) and 'category' in task:
-                category = task['category']
-                distribution[category] = distribution.get(category, 0) + 1
-        
-        return distribution
+        for t in tasks:
+            p = t.get('priority', 'media')
+            val = priority_map.get(p, 2)
+            if val > max_p:
+                max_p = val
+                max_label = p
+        return max_label
 
-    def _calculate_priority_distribution(self, tasks: list) -> dict:
-        """Calcula la distribución de tareas por prioridad"""
-        distribution = {}
-        
-        for task in tasks:
-            if isinstance(task, dict) and 'priority' in task:
-                priority = task['priority']
-                distribution[priority] = distribution.get(priority, 0) + 1
-        
-        return distribution
+    def _calculate_distribution(self, tasks: list, field: str) -> dict:
+        """Genera histograma para cualquier campo (categoría, prioridad)"""
+        dist = {}
+        for t in tasks:
+            val = t.get(field, 'unknown')
+            dist[val] = dist.get(val, 0) + 1
+        return dist
 
-    def _calculate_complexity_distribution(self, tasks: list) -> dict:
-        """Calcula la distribución de tareas por complejidad"""
-        distribution = {}
-        
-        for task in tasks:
-            if isinstance(task, dict) and 'complexity' in task:
-                complexity = task['complexity']
-                distribution[complexity] = distribution.get(complexity, 0) + 1
-        
-        return distribution
-
-    def _extract_required_skills(self, tasks: list) -> list:
-        """Extrae la lista única de habilidades requeridas"""
+    def _extract_skills(self, tasks: list) -> list:
+        """Extrae lista única de habilidades de todas las tareas"""
         skills = set()
-        
-        for task in tasks:
-            if isinstance(task, dict) and 'required_skills' in task:
-                task_skills = task['required_skills']
-                if isinstance(task_skills, list):
-                    skills.update(task_skills)
-        
+        for t in tasks:
+            task_skills = t.get('required_skills', [])
+            if isinstance(task_skills, list):
+                skills.update(task_skills)
+            elif isinstance(task_skills, str):
+                skills.add(task_skills)
         return list(skills)
-
-    def _calculate_skill_frequency(self, tasks: list) -> dict:
-        """Calcula la frecuencia de cada habilidad requerida"""
-        skill_count = {}
-        
-        for task in tasks:
-            if isinstance(task, dict) and 'required_skills' in task:
-                task_skills = task['required_skills']
-                if isinstance(task_skills, list):
-                    for skill in task_skills:
-                        skill_count[skill] = skill_count.get(skill, 0) + 1
-        
-        return skill_count

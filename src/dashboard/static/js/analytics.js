@@ -1,4 +1,4 @@
-// Analytics Dashboard JavaScript
+// src/dashboard/static/js/analytics.js - CÓDIGO COMPLETO Y CORREGIDO
 let charts = {};
 
 async function loadCharts() {
@@ -15,7 +15,7 @@ async function loadCharts() {
             fetch(`/dashboard/api/skills?days=${period}`).then(r => r.json())
         ]);
 
-        // Destruir gráficas existentes
+        // Destruir gráficas existentes para evitar superposición
         Object.values(charts).forEach(chart => {
             if (chart) chart.destroy();
         });
@@ -30,26 +30,22 @@ async function loadCharts() {
 
     } catch (error) {
         console.error('Error loading charts:', error);
-        alert('Error al cargar los datos: ' + error.message);
     }
 }
 
 function createCategoryChart(categories) {
     const ctx = document.getElementById('categoryChart').getContext('2d');
     
-    // Colores para categorías
-    const backgroundColors = [
-        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-        '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
-    ];
-
     charts.category = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: Object.keys(categories).map(key => key.replace('_', ' ')),
             datasets: [{
                 data: Object.values(categories),
-                backgroundColor: backgroundColors,
+                backgroundColor: [
+                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
+                    '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF'
+                ],
                 borderWidth: 2,
                 borderColor: '#fff'
             }]
@@ -57,20 +53,7 @@ function createCategoryChart(categories) {
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    position: 'right',
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.label || '';
-                            const value = context.raw || 0;
-                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                            const percentage = Math.round((value / total) * 100);
-                            return `${label}: ${value} (${percentage}%)`;
-                        }
-                    }
-                }
+                legend: { position: 'right' }
             }
         }
     });
@@ -79,31 +62,16 @@ function createCategoryChart(categories) {
 function createPriorityChart(priorities) {
     const ctx = document.getElementById('priorityChart').getContext('2d');
     
-    // Ordenar por prioridad
-    const priorityOrder = ['crítica', 'alta', 'media', 'baja'];
-    const sortedLabels = Object.keys(priorities).sort((a, b) => 
-        priorityOrder.indexOf(a) - priorityOrder.indexOf(b)
-    );
-    const sortedData = sortedLabels.map(label => priorities[label]);
-
-    const backgroundColors = sortedLabels.map(priority => {
-        switch(priority) {
-            case 'crítica': return '#DC2626';
-            case 'alta': return '#EA580C';
-            case 'media': return '#D97706';
-            case 'baja': return '#059669';
-            default: return '#6B7280';
-        }
-    });
-
     charts.priority = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: sortedLabels.map(label => label.charAt(0).toUpperCase() + label.slice(1)),
+            labels: Object.keys(priorities),
             datasets: [{
-                label: 'Número de Tareas',
-                data: sortedData,
-                backgroundColor: backgroundColors,
+                label: 'Tareas',
+                data: Object.values(priorities),
+                backgroundColor: [
+                    '#DC2626', '#EA580C', '#D97706', '#059669'
+                ],
                 borderWidth: 0,
                 borderRadius: 4
             }]
@@ -111,16 +79,12 @@ function createPriorityChart(priorities) {
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    display: false
-                }
+                legend: { display: false }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
+                    ticks: { stepSize: 1 }
                 }
             }
         }
@@ -133,9 +97,7 @@ function createComplexityChart(complexityData) {
     charts.complexity = new Chart(ctx, {
         type: 'pie',
         data: {
-            labels: Object.keys(complexityData.complexity_distribution).map(key => 
-                key.replace('_', ' ').charAt(0).toUpperCase() + key.replace('_', ' ').slice(1)
-            ),
+            labels: Object.keys(complexityData.complexity_distribution).map(key => key.replace('_', ' ')),
             datasets: [{
                 data: Object.values(complexityData.complexity_distribution),
                 backgroundColor: ['#10B981', '#3B82F6', '#8B5CF6', '#EF4444'],
@@ -146,19 +108,18 @@ function createComplexityChart(complexityData) {
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    position: 'bottom',
-                }
+                legend: { position: 'bottom' }
             }
         }
     });
 }
 
+// --- CORRECCIÓN IMPORTANTE AQUÍ ---
 function createSkillsChart(skills) {
     const ctx = document.getElementById('skillsChart').getContext('2d');
     
     charts.skills = new Chart(ctx, {
-        type: 'horizontalBar',
+        type: 'bar', // Usar 'bar' en lugar de 'horizontalBar'
         data: {
             labels: Object.keys(skills),
             datasets: [{
@@ -170,19 +131,15 @@ function createSkillsChart(skills) {
             }]
         },
         options: {
-            indexAxis: 'y',
+            indexAxis: 'y', // ESTO HACE QUE SEA HORIZONTAL
             responsive: true,
             plugins: {
-                legend: {
-                    display: false
-                }
+                legend: { display: false }
             },
             scales: {
                 x: {
                     beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
+                    ticks: { stepSize: 1 }
                 }
             }
         }
@@ -192,7 +149,6 @@ function createSkillsChart(skills) {
 function createTimelineChart(timeline) {
     const ctx = document.getElementById('timelineChart').getContext('2d');
     
-    // Agrupar por fecha
     const dates = [...new Set(timeline.map(item => item.request_date?.split('T')[0]))].sort();
     const projectsByDate = dates.map(date => 
         timeline.filter(item => item.request_date?.startsWith(date)).length
@@ -201,9 +157,9 @@ function createTimelineChart(timeline) {
     charts.timeline = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: dates.map(date => new Date(date).toLocaleDateString()),
+            labels: dates,
             datasets: [{
-                label: 'Proyectos por Día',
+                label: 'Proyectos',
                 data: projectsByDate,
                 borderColor: '#3B82F6',
                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -213,18 +169,9 @@ function createTimelineChart(timeline) {
         },
         options: {
             responsive: true,
-            plugins: {
-                legend: {
-                    display: false
-                }
-            },
+            plugins: { legend: { display: false } },
             scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
-                }
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
             }
         }
     });
@@ -246,7 +193,9 @@ function updateMetrics(metrics) {
             <span class="font-semibold text-purple-600">${metrics.average_hours_per_project}h</span>
         </div>
     `;
-    document.getElementById('efficiencyMetrics').innerHTML = efficiencyHtml;
+    
+    const effElement = document.getElementById('efficiencyMetrics');
+    if (effElement) effElement.innerHTML = efficiencyHtml;
 
     // Actualizar métricas de resumen
     const summaryHtml = `
@@ -264,11 +213,15 @@ function updateMetrics(metrics) {
         </div>
         <div class="text-center p-4 bg-orange-50 rounded-lg">
             <div class="text-2xl font-bold text-orange-600">${metrics.completed_projects}</div>
-            <div class="text-sm text-orange-800">Proyectos Completados</div>
+            <div class="text-sm text-orange-800">Completados</div>
         </div>
     `;
-    document.getElementById('summaryMetrics').innerHTML = summaryHtml;
+    
+    const sumElement = document.getElementById('summaryMetrics');
+    if (sumElement) sumElement.innerHTML = summaryHtml;
 }
 
+// Cargar inicial
+document.addEventListener('DOMContentLoaded', loadCharts);
 // Auto-refresh cada 5 minutos
 setInterval(loadCharts, 300000);

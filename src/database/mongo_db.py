@@ -1,4 +1,4 @@
-# src/database/mongo_db.py - CONEXIÓN CORREGIDA
+# src/database/mongo_db.py - CONEXIÓN CORREGIDA (con timeout rápido)
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from models.mongo_db import TrelloCard
@@ -15,25 +15,51 @@ class MongoDB():
     """
     def __init__(self) -> None:
         # CONEXIÓN CORREGIDA para problemas SSL en Windows
+        # Se añade serverSelectionTimeoutMS=5000 para forzar un fallo rápido (5s)
         try:
-            # Opción 1: Intentar con certifi
-            self.client = MongoClient(mongodb_uri, tlsCAFile=certifi.where())
+            # Opción 1: Intentar con certifi (método estándar recomendado)
+            self.client = MongoClient(
+                mongodb_uri, 
+                tlsCAFile=certifi.where(), 
+                serverSelectionTimeoutMS=5000  # Timeout rápido
+            )
+            self.client.admin.command('ping') # Test de conexión
             print("✅ MongoDB conectado con certifi")
         except Exception as e:
             try:
-                # Opción 2: Intentar sin verificación SSL (solo para desarrollo)
-                self.client = MongoClient(mongodb_uri, tlsAllowInvalidCertificates=True)
+                # Opción 2: Intentar sin verificación SSL (solo para desarrollo/workaround)
+                self.client = MongoClient(
+                    mongodb_uri, 
+                    tlsAllowInvalidCertificates=True, 
+                    serverSelectionTimeoutMS=5000  # Timeout rápido
+                )
+                self.client.admin.command('ping') # Test de conexión
                 print("✅ MongoDB conectado sin verificación SSL")
             except Exception as e2:
                 # Opción 3: Conexión local como fallback
-                print(f"❌ Error conexión MongoDB: {e}")
-                print("🔄 Intentando con MongoDB local...")
-                self.client = MongoClient("mongodb://localhost:27017/")
-                print("✅ MongoDB local conectado")
-        
-        db = self.client["trello_db"]
-        self.collection = db["card"]  # Colección existente
-        self.analytics_collection = db["analytics"]
+                # Se utiliza el error original 'e' para el mensaje
+                print(f"❌ Error conexión MongoDB Atlas: {e}")
+                print("🔄 Intentando con MongoDB local (mongodb://localhost:27017/)...")
+                try:
+                    self.client = MongoClient("mongodb://localhost:27017/")
+                    self.client.admin.command('ping') # Test de conexión
+                    print("✅ MongoDB local conectado")
+                except Exception as e3:
+                    print(f"❌ Error al conectar con MongoDB local: {e3}")
+                    # En este punto el cliente fallará en cualquier operación
+                    self.client = None
+                    
+        # Inicialización de colecciones (solo si el cliente se conectó con éxito)
+        if self.client:
+            db = self.client["trello_db"]
+            self.collection = db["card"]  # Colección existente
+            self.analytics_collection = db["analytics"]
+            self.team_collection = db["team_members"]
+        else:
+            # Manejar el caso de cliente nulo si todas las conexiones fallaron
+            self.collection = None
+            self.analytics_collection = None
+            self.team_collection = None
 
     def init_db_and_get_collection(self) -> Union[None, Collection]:
         """Inicializa la base de datos y devuelve la colección"""
@@ -42,17 +68,13 @@ class MongoDB():
         return collection
 
     def data_insert(self, card_id: str = "", comment_history: list = []):
-        """Inserta un nuevo documento para una card"""
         card_data = self.data_select(card_id=card_id)
         if card_data is not None:
             return card_data
-
         data = self.collection.insert_one({
             "card_id": card_id,
             "comment_history": comment_history
         })
-
-        print("INSERTED: ", data.inserted_id)
         return None
 
     def data_update(self, card_id: str = "", comment_history: list = []):

@@ -2,302 +2,236 @@
 from models.team_members import TeamMember, TeamMetrics, AssignmentResult, SkillLevel
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
+from database.mongo_db import MongoDB
 import random
 
 class AssignmentService:
     """
-    Servicio para asignación inteligente de tareas basado en:
-    - Disponibilidad actual
-    - Habilidades requeridas
-    - Complejidad de tarea
-    - Historial de desempeño
-    - Carga de trabajo equitativa
+    Servicio de asignación inteligente CON CÁLCULO DE MÉTRICAS HISTÓRICAS.
+    Actualiza promedios ponderados al completar tareas.
     """
     
     def __init__(self):
+        self.db = MongoDB()
         self.team_members: Dict[str, TeamMember] = {}
-        self._initialize_sample_team()
+        self._load_team_data()
     
-    def _initialize_sample_team(self):
-        """Inicializar equipo de ejemplo"""
-        sample_team = [
-            TeamMember(
-                slack_id="U09ER0ZG9EH",  # Carlos
-                name="Carlos Chilque",
-                email="carlos@empresa.com",
-                skills=["React", "Node.js", "Python", "MongoDB", "FastAPI", "TypeScript"],
-                skill_level=SkillLevel.SENIOR,
-                max_tasks=8,
-                weekly_capacity=40,
-                specialization=["backend", "fullstack"]
-            ),
-            TeamMember(
-                slack_id="U09U6KWK21K",
-                name="Daniela Aduviri", 
-                email="carlos_chilque@outlook.com",
-                skills=["React", "JavaScript", "CSS", "UI/UX", "Figma"],
-                skill_level=SkillLevel.MID,
-                max_tasks=6,
-                weekly_capacity=35,
-                specialization=["frontend", "design"]
-            ),
-            TeamMember(
-                slack_id="U09UDEDJP60",
-                name="Victor Flores",
-                email="carlos_chilque@usmp.pe",
-                skills=["Python", "Django", "PostgreSQL", "Docker", "AWS"],
-                skill_level=SkillLevel.SENIOR,
-                max_tasks=7,
-                weekly_capacity=38,
-                specialization=["backend", "devops"]
-            ),
-            TeamMember(
-                slack_id="U09UE36P6PN", 
-                name="Bryan Rodríguez",
-                email="chilquecarlos77@gmail.com",
-                skills=["JavaScript", "Vue.js", "CSS", "React", "Testing"],
-                skill_level=SkillLevel.MID,
-                max_tasks=5,
-                weekly_capacity=32,
-                specialization=["frontend", "testing"]
+    def _load_team_data(self):
+        """Carga miembros desde BD o inicializa por defecto"""
+        loaded = False
+        if self.db.team_collection is not None:
+            try:
+                stored_members = list(self.db.team_collection.find())
+                if stored_members:
+                    print(f"📂 Cargando {len(stored_members)} miembros desde MongoDB")
+                    for doc in stored_members:
+                        if '_id' in doc: del doc['_id']
+                        if 'skill_level' in doc and isinstance(doc['skill_level'], str):
+                            try:
+                                for sl in SkillLevel:
+                                    if sl.value == doc['skill_level']:
+                                        doc['skill_level'] = sl
+                                        break
+                            except: pass
+                        member = TeamMember(**doc)
+                        self.team_members[member.slack_id] = member
+                    loaded = True
+            except Exception as e:
+                print(f"⚠️ Error cargando equipo de BD: {e}")
+        
+        if not loaded:
+            print("⚠️ Inicializando equipo por defecto")
+            self._initialize_sample_team()
+            self._save_all_members()
+
+    def _save_all_members(self):
+        if self.db.team_collection is None: return
+        for member in self.team_members.values():
+            self._persist_member(member)
+
+    def _persist_member(self, member: TeamMember):
+        if self.db.team_collection is None: return
+        try:
+            data = member.dict()
+            if isinstance(data.get('skill_level'), (SkillLevel, object)):
+                try:
+                    if hasattr(data['skill_level'], 'value'):
+                        data['skill_level'] = data['skill_level'].value
+                except: pass
+            
+            self.db.team_collection.update_one(
+                {"slack_id": member.slack_id},
+                {"$set": data},
+                upsert=True
             )
+        except Exception as e:
+            print(f"❌ Error guardando miembro {member.name}: {e}")
+
+    def _initialize_sample_team(self):
+        sample_team = [
+            TeamMember(slack_id="U09ER0ZG9EH", name="Carlos Chilque", email="carlos@empresa.com", skills=["React", "Node.js", "Python", "MongoDB", "FastAPI", "TypeScript"], skill_level=SkillLevel.SENIOR, max_tasks=8, weekly_capacity=40, current_tasks=5, current_weekly_hours=28.0, completed_tasks=45, success_rate=98.5, avg_completion_time=3.5, specialization=["backend", "fullstack"]),
+            TeamMember(slack_id="U09U6KWK21K", name="Daniela Aduviri", email="daniela@outlook.com", skills=["React", "JavaScript", "CSS", "UI/UX", "Figma"], skill_level=SkillLevel.MID, max_tasks=6, weekly_capacity=35, current_tasks=2, current_weekly_hours=10.0, completed_tasks=32, success_rate=95.0, avg_completion_time=4.2, specialization=["frontend", "design"]),
+            TeamMember(slack_id="U09UDEDJP60", name="Victor Flores", email="victor@usmp.pe", skills=["Python", "Django", "PostgreSQL", "Docker", "AWS"], skill_level=SkillLevel.SENIOR, max_tasks=7, weekly_capacity=38, current_tasks=6, current_weekly_hours=35.0, completed_tasks=58, success_rate=99.1, avg_completion_time=2.8, specialization=["backend", "devops"]),
+            TeamMember(slack_id="U09UE36P6PN", name="Bryan Rodríguez", email="bryan@gmail.com", skills=["JavaScript", "Vue.js", "CSS", "React", "Testing"], skill_level=SkillLevel.MID, max_tasks=5, weekly_capacity=32, current_tasks=1, current_weekly_hours=4.0, completed_tasks=15, success_rate=88.5, avg_completion_time=5.1, specialization=["frontend", "testing"])
         ]
-        
         for member in sample_team:
+            if (member.current_tasks >= member.max_tasks * 0.9 or member.current_weekly_hours >= member.weekly_capacity * 0.9):
+                member.available = False
             self.team_members[member.slack_id] = member
-    
-    def assign_task(self, task: Dict, required_skills: List[str], complexity: str, estimated_hours: float) -> AssignmentResult:
-        """
-        Asigna una tarea al miembro más adecuado del equipo
-        """
-        available_members = self._get_available_members()
-        
-        if not available_members:
-            return self._get_fallback_assignment(task)
-        
-        # Calcular score para cada miembro disponible
-        member_scores = []
-        for member in available_members:
-            score = self._calculate_assignment_score(member, task, required_skills, complexity, estimated_hours)
-            member_scores.append((member, score))
-        
-        # Ordenar por score descendente
-        member_scores.sort(key=lambda x: x[1], reverse=True)
-        
-        # Seleccionar el mejor candidato
-        best_member, best_score = member_scores[0]
-        
-        # Actualizar métricas del miembro
-        self._update_member_metrics(best_member, estimated_hours)
-        
-        return AssignmentResult(
-            assigned_to=best_member.name,
-            slack_id=best_member.slack_id,
-            member_name=best_member.name,
-            confidence_score=best_score,
-            reason=self._get_assignment_reason(best_member, best_score, required_skills),
-            estimated_completion_time=estimated_hours
-        )
-    
-    def _get_available_members(self) -> List[TeamMember]:
-        """Obtener miembros disponibles (no exceden su capacidad)"""
-        available = []
-        for member in self.team_members.values():
-            if (member.available and 
-                member.current_tasks < member.max_tasks and
-                member.current_weekly_hours < member.weekly_capacity * 0.8):  # 80% de capacidad máxima
-                available.append(member)
-        return available
-    
-    def _calculate_assignment_score(self, member: TeamMember, task: Dict, 
-                                  required_skills: List[str], complexity: str, 
-                                  estimated_hours: float) -> float:
-        """Calcular score de asignación (0-100)"""
-        score = 0.0
-        
-        # 1. Coincidencia de habilidades (40%)
-        skill_match = self._calculate_skill_match(member.skills, required_skills)
-        score += skill_match * 0.4
-        
-        # 2. Nivel vs complejidad (25%)
-        level_match = self._calculate_level_match(member.skill_level, complexity)
-        score += level_match * 0.25
-        
-        # 3. Carga de trabajo (20%)
-        workload_score = self._calculate_workload_score(member)
-        score += workload_score * 0.2
-        
-        # 4. Desempeño histórico (15%)
-        performance_score = self._calculate_performance_score(member)
-        score += performance_score * 0.15
-        
-        return min(score * 100, 100)  # Convertir a porcentaje
-    
-    def _calculate_skill_match(self, member_skills: List[str], required_skills: List[str]) -> float:
-        """Calcular coincidencia de habilidades"""
-        if not required_skills:
-            return 0.5  # Valor neutral si no hay habilidades requeridas
-        
-        matches = sum(1 for skill in required_skills if skill in member_skills)
-        return matches / len(required_skills)
-    
-    def _calculate_level_match(self, member_level: SkillLevel, complexity: str) -> float:
-        """Calcular coincidencia de nivel vs complejidad"""
-        level_weights = {
-            SkillLevel.JUNIOR: {"simple": 1.0, "moderada": 0.6, "compleja": 0.2, "muy_compleja": 0.0},
-            SkillLevel.MID: {"simple": 0.8, "moderada": 1.0, "compleja": 0.7, "muy_compleja": 0.3},
-            SkillLevel.SENIOR: {"simple": 0.6, "moderada": 0.8, "compleja": 1.0, "muy_compleja": 0.8},
-            SkillLevel.EXPERT: {"simple": 0.4, "moderada": 0.6, "compleja": 0.8, "muy_compleja": 1.0}
-        }
-        
-        complexity_map = {
-            "simple": "simple",
-            "moderada": "moderada", 
-            "compleja": "compleja",
-            "muy_compleja": "muy_compleja"
-        }
-        
-        return level_weights.get(member_level, {}).get(complexity_map.get(complexity, "moderada"), 0.5)
-    
-    def _calculate_workload_score(self, member: TeamMember) -> float:
-        """Calcular score basado en carga de trabajo"""
-        # Menos carga = mejor score
-        task_ratio = member.current_tasks / member.max_tasks
-        hours_ratio = member.current_weekly_hours / member.weekly_capacity
-        
-        # Promedio de ambos ratios
-        avg_ratio = (task_ratio + hours_ratio) / 2
-        return 1.0 - avg_ratio  # Invertir: menos carga = score más alto
-    
-    def _calculate_performance_score(self, member: TeamMember) -> float:
-        """Calcular score basado en desempeño histórico"""
-        base_score = member.success_rate / 100.0  # Convertir porcentaje a decimal
-        
-        # Ajustar por tiempo de completación (menos tiempo = mejor)
-        time_bonus = 0.0
-        if member.avg_completion_time > 0:
-            # Normalizar: menos de 10 horas = bonus, más de 40 horas = penalización
-            if member.avg_completion_time <= 10:
-                time_bonus = 0.2
-            elif member.avg_completion_time <= 20:
-                time_bonus = 0.1
-            elif member.avg_completion_time > 40:
-                time_bonus = -0.1
-        
-        return min(base_score + time_bonus, 1.0)
-    
-    def _update_member_metrics(self, member: TeamMember, estimated_hours: float):
-        """Actualizar métricas del miembro después de asignación"""
-        member.current_tasks += 1
-        member.current_weekly_hours += estimated_hours
-        member.updated_at = datetime.utcnow()
-        
-        # Si excede ciertos límites, marcar como muy ocupado temporalmente
-        if (member.current_tasks >= member.max_tasks * 0.9 or 
-            member.current_weekly_hours >= member.weekly_capacity * 0.9):
-            member.available = False
-    
-    def _get_assignment_reason(self, member: TeamMember, score: float, required_skills: List[str]) -> str:
-        """Generar razón de asignación"""
-        reasons = []
-        
-        if score >= 80:
-            reasons.append("alta compatibilidad de habilidades")
-        elif score >= 60:
-            reasons.append("buen balance de habilidades y disponibilidad")
-        else:
-            reasons.append("asignación por disponibilidad")
-        
-        matching_skills = [skill for skill in required_skills if skill in member.skills]
-        if matching_skills:
-            reasons.append(f"coincide en: {', '.join(matching_skills[:3])}")
-        
-        if member.current_tasks < member.max_tasks * 0.5:
-            reasons.append("buena disponibilidad actual")
-        
-        return "; ".join(reasons)
-    
-    def _get_fallback_assignment(self, task: Dict) -> AssignmentResult:
-        """Asignación de fallback cuando no hay miembros disponibles"""
-        # Buscar el miembro con menor carga
-        least_loaded = min(self.team_members.values(), 
-                          key=lambda m: m.current_tasks + m.current_weekly_hours)
-        
-        return AssignmentResult(
-            assigned_to=least_loaded.name,
-            slack_id=least_loaded.slack_id,
-            member_name=least_loaded.name,
-            confidence_score=0.3,
-            reason="asignación de emergencia - todos los miembros están muy ocupados",
-            estimated_completion_time=0.0
-        )
-    
-    def get_team_metrics(self) -> TeamMetrics:
-        """Obtener métricas del equipo"""
-        total_members = len(self.team_members)
-        available_members = len(self._get_available_members())
-        
-        total_tasks = sum(m.current_tasks for m in self.team_members.values())
-        total_completed = sum(m.completed_tasks for m in self.team_members.values())
-        
-        completion_rate = (total_completed / (total_tasks + total_completed)) * 100 if (total_tasks + total_completed) > 0 else 0
-        
-        # Distribución de carga
-        workload_distribution = {}
-        for member in self.team_members.values():
-            workload_pct = (member.current_tasks / member.max_tasks) * 100
-            workload_distribution[member.slack_id] = workload_pct
-        
-        # Cobertura de habilidades
-        skill_coverage = {}
+
+    # --- MÉTODOS DE ASIGNACIÓN ---
+    def assign_batch(self, tasks: List[Dict]) -> AssignmentResult:
+        if not self.team_members:
+            return AssignmentResult(assigned_to="Unassigned", slack_id="UNKNOWN", member_name="Unassigned", confidence_score=0, reason="No team loaded", estimated_completion_time=0)
+
+        total_hours = 0.0
         all_skills = set()
-        for member in self.team_members.values():
-            all_skills.update(member.skills)
-        
-        for skill in all_skills:
-            count = sum(1 for member in self.team_members.values() if skill in member.skills)
-            skill_coverage[skill] = count
-        
-        # Miembros muy ocupados
-        busy_members = [
-            member.slack_id for member in self.team_members.values()
-            if member.current_tasks >= member.max_tasks * 0.8
-        ]
-        
-        return TeamMetrics(
-            total_members=total_members,
-            available_members=available_members,
-            total_tasks_assigned=total_tasks,
-            total_tasks_completed=total_completed,
-            completion_rate=completion_rate,
-            avg_completion_time=0.0,  # Se calcularía con datos reales
-            workload_distribution=workload_distribution,
-            skill_coverage=skill_coverage,
-            busy_members=busy_members
+        max_complexity_val = 0
+        complexity_map = {'simple': 1, 'moderada': 2, 'compleja': 3, 'muy_compleja': 4}
+        highest_complexity = "moderada"
+
+        for task in tasks:
+            hours = 4.0
+            if 'time_estimate' in task:
+                val = task['time_estimate']
+                if isinstance(val, (int, float)): hours = float(val)
+                elif isinstance(val, dict): hours = float(val.get('realistic', 4.0))
+            total_hours += hours
+
+            task_skills = task.get('required_skills', [])
+            if isinstance(task_skills, list): all_skills.update(task_skills)
+            elif isinstance(task_skills, str): all_skills.add(task_skills)
+
+            comp = task.get('complexity', 'moderada')
+            val = complexity_map.get(comp, 2)
+            if val > max_complexity_val:
+                max_complexity_val = val
+                highest_complexity = comp
+
+        available_members = self._get_available_members()
+        if not available_members:
+            fallback = self._get_fallback_assignment({"description": "Batch tasks"})
+            if fallback and fallback.slack_id in self.team_members:
+                member = self.team_members[fallback.slack_id]
+                self._update_member_metrics(member, total_hours, count=len(tasks))
+            return fallback
+
+        member_scores = []
+        required_skills_list = list(all_skills)
+        for member in available_members:
+            score = self._calculate_assignment_score(member, {"description": "Batch"}, required_skills_list, highest_complexity, total_hours)
+            member_scores.append((member, score))
+
+        member_scores.sort(key=lambda x: x[1], reverse=True)
+        best_member, best_score = member_scores[0]
+        self._update_member_metrics(best_member, total_hours, count=len(tasks))
+
+        return AssignmentResult(
+            assigned_to=best_member.name, slack_id=best_member.slack_id, member_name=best_member.name,
+            confidence_score=best_score, reason=f"Mejor candidato para {len(tasks)} tareas ({total_hours}h)",
+            estimated_completion_time=total_hours
         )
     
-    def complete_task(self, slack_id: str, actual_hours: float, success: bool = True):
-        """Marcar tarea como completada"""
+    # --- MÉTODO CORREGIDO Y MEJORADO ---
+    def complete_task(self, slack_id: str, actual_hours: float, task_count: int = 1, success: bool = True):
+        """
+        Actualiza métricas históricas (Promedio tiempo, Success Rate) y libera carga.
+        Usa promedios ponderados para mayor precisión.
+        """
         if slack_id in self.team_members:
             member = self.team_members[slack_id]
-            member.current_tasks = max(0, member.current_tasks - 1)
+            
+            print(f"📉 Actualizando métricas de {member.name}: +{task_count} tareas, {actual_hours}h")
+            
+            # 1. Guardar estado previo para cálculos
+            prev_completed = member.completed_tasks
+            prev_avg_time = member.avg_completion_time
+            prev_success_rate = member.success_rate
+            
+            # 2. Liberar carga actual
+            member.current_tasks = max(0, member.current_tasks - task_count)
             member.current_weekly_hours = max(0, member.current_weekly_hours - actual_hours)
-            member.completed_tasks += 1
             
-            # Actualizar métricas de desempeño
-            if success:
-                # Actualizar tiempo promedio de completación
-                if member.avg_completion_time == 0:
-                    member.avg_completion_time = actual_hours
-                else:
-                    member.avg_completion_time = (member.avg_completion_time + actual_hours) / 2
-                
-                # Actualizar tasa de éxito
-                total_attempts = member.completed_tasks
-                member.success_rate = (member.success_rate * (total_attempts - 1) + 100) / total_attempts
+            # 3. Actualizar total completadas
+            member.completed_tasks += task_count
+            total_now = member.completed_tasks
             
-            # Reactivar disponibilidad si estaba marcado como no disponible
-            if not member.available and member.current_tasks < member.max_tasks * 0.8:
-                member.available = True
+            if total_now > 0:
+                # 4. Recalcular Tiempo Promedio (Moving Average)
+                # (Promedio Anterior * Cantidad Anterior) + Nuevas Horas Totales / Nueva Cantidad
+                prev_total_time = prev_avg_time * prev_completed
+                # Calculamos el promedio de horas POR TAREA para este lote
+                # Nota: avg_completion_time suele ser horas/tarea. 
+                new_avg_time = (prev_total_time + actual_hours) / total_now
+                member.avg_completion_time = new_avg_time
+
+                # 5. Recalcular Success Rate (Moving Average)
+                prev_total_score = prev_success_rate * prev_completed
+                # Puntos del lote actual (100 si éxito, 0 si fallo) * cantidad de tareas
+                batch_score = (100 * task_count) if success else 0
+                new_success_rate = (prev_total_score + batch_score) / total_now
+                member.success_rate = new_success_rate
+            
+            # 6. Verificar disponibilidad
+            threshold_tasks = member.max_tasks * 0.8
+            threshold_hours = member.weekly_capacity * 0.8
+            
+            if not member.available:
+                if member.current_tasks < threshold_tasks and member.current_weekly_hours < threshold_hours:
+                    member.available = True
+                    print(f"✅ {member.name} vuelve a estar DISPONIBLE")
             
             member.updated_at = datetime.utcnow()
+            self._persist_member(member)
+
+    def _update_member_metrics(self, member: TeamMember, estimated_hours: float, count: int = 1):
+        member.current_tasks += count
+        member.current_weekly_hours += estimated_hours
+        member.updated_at = datetime.utcnow()
+        if (member.current_tasks >= member.max_tasks * 0.9 or member.current_weekly_hours >= member.weekly_capacity * 0.9):
+            member.available = False
+        self._persist_member(member)
+
+    def _get_available_members(self) -> List[TeamMember]:
+        if not self.team_members: return []
+        available = []
+        for member in self.team_members.values():
+            if (member.available and member.current_tasks < member.max_tasks and member.current_weekly_hours < member.weekly_capacity * 0.85):
+                available.append(member)
+        return available
+
+    def _calculate_assignment_score(self, member, task, required_skills, complexity, estimated_hours):
+        score = 0.0
+        if not required_skills: score += 0.5 * 0.4
+        else: score += (sum(1 for s in required_skills if s in member.skills) / len(required_skills)) * 0.4
+        
+        lvl = member.skill_level.value if hasattr(member.skill_level, 'value') else member.skill_level
+        if lvl == 'senior': score += (1.0 if complexity in ['compleja', 'muy_compleja'] else 0.7) * 0.25
+        elif lvl == 'mid': score += (1.0 if complexity in ['moderada', 'simple'] else 0.6) * 0.25
+        else: score += (1.0 if complexity == 'simple' else 0.4) * 0.25
+        
+        ratio = ((member.current_tasks / member.max_tasks) + (member.current_weekly_hours / member.weekly_capacity)) / 2
+        score += (1.0 - ratio) * 0.2
+        score += (member.success_rate / 100.0) * 0.15
+        return min(score * 100, 100)
+
+    def _get_fallback_assignment(self, task):
+        if not self.team_members: return None
+        candidates = list(self.team_members.values())
+        candidates.sort(key=lambda m: (m.current_tasks / m.max_tasks))
+        m = candidates[0]
+        return AssignmentResult(assigned_to=m.name, slack_id=m.slack_id, member_name=m.name, confidence_score=0.3, reason="Asignación de emergencia", estimated_completion_time=0.0)
+
+    def get_team_metrics(self) -> TeamMetrics:
+        total_members = len(self.team_members)
+        available_members = sum(1 for m in self.team_members.values() if m.available)
+        total_tasks = sum(m.current_tasks for m in self.team_members.values())
+        total_completed = sum(m.completed_tasks for m in self.team_members.values())
+        completion_rate = (total_completed / (total_tasks + total_completed)) * 100 if (total_tasks + total_completed) > 0 else 0
+        workload_distribution = {m.slack_id: (m.current_tasks / m.max_tasks) * 100 for m in self.team_members.values()}
+        all_skills = set()
+        for m in self.team_members.values(): all_skills.update(m.skills)
+        skill_coverage = {skill: sum(1 for m in self.team_members.values() if skill in m.skills) for skill in all_skills}
+        busy_members = [m.slack_id for m in self.team_members.values() if not m.available]
+        
+        return TeamMetrics(total_members=total_members, available_members=available_members, total_tasks_assigned=total_tasks, total_tasks_completed=total_completed, completion_rate=completion_rate, avg_completion_time=0.0, workload_distribution=workload_distribution, skill_coverage=skill_coverage, busy_members=busy_members)

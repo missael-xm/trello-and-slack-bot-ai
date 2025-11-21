@@ -1,4 +1,4 @@
-// src/dashboard/static/js/team_analytics.js
+// src/dashboard/static/js/team_analytics.js - CÓDIGO COMPLETO Y CORREGIDO
 let teamCharts = {};
 
 async function loadTeamMetrics() {
@@ -24,29 +24,32 @@ async function loadTeamMetrics() {
 
     } catch (error) {
         console.error('Error loading team metrics:', error);
-        alert('Error al cargar las métricas del equipo: ' + error.message);
     }
 }
 
 function updateMainMetrics(metrics) {
-    document.getElementById('totalMembers').textContent = metrics.total_members;
-    document.getElementById('availableMembers').textContent = `${metrics.available_members} disponibles`;
-    document.getElementById('totalTasks').textContent = metrics.total_tasks_assigned;
-    document.getElementById('completedTasks').textContent = `${metrics.total_tasks_completed} completadas`;
-    document.getElementById('completionRate').textContent = `${metrics.completion_rate.toFixed(1)}%`;
-    document.getElementById('successRate').textContent = `Rendimiento: ${metrics.completion_rate >= 80 ? 'Excelente' : metrics.completion_rate >= 60 ? 'Bueno' : 'Necesita mejora'}`;
-    document.getElementById('busyMembers').textContent = metrics.busy_members.length;
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    };
+    
+    setVal('totalMembers', metrics.total_members);
+    setVal('availableMembers', `${metrics.available_members} disponibles`);
+    setVal('totalTasks', metrics.total_tasks_assigned);
+    setVal('completedTasks', `${metrics.total_tasks_completed} completadas`);
+    setVal('completionRate', `${metrics.completion_rate.toFixed(1)}%`);
+    setVal('successRate', `Rendimiento: ${metrics.completion_rate >= 80 ? 'Excelente' : metrics.completion_rate >= 60 ? 'Bueno' : 'Mejorable'}`);
+    setVal('busyMembers', metrics.busy_members.length);
 }
 
 function updateMembersTable(members) {
     const tableBody = document.getElementById('teamMembersTable');
+    if (!tableBody) return;
     
     if (!members || members.length === 0) {
         tableBody.innerHTML = `
             <tr>
-                <td colspan="7" class="px-6 py-4 text-center text-gray-500">
-                    No hay datos de miembros del equipo
-                </td>
+                <td colspan="7" class="px-6 py-4 text-center text-gray-500">No hay datos de miembros</td>
             </tr>
         `;
         return;
@@ -67,11 +70,11 @@ function updateMembersTable(members) {
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
                 <div class="text-sm text-gray-900">${member.current_tasks}</div>
-                <div class="text-xs text-gray-500">de capacidad</div>
+                <div class="text-xs text-gray-500">tareas</div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                    ${member.completed_tasks} tareas
+                    ${member.completed_tasks} comp.
                 </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
@@ -102,7 +105,6 @@ function updateMembersTable(members) {
 function createWorkloadChart(members) {
     const ctx = document.getElementById('workloadChart').getContext('2d');
     
-    // Destruir gráfica existente
     if (teamCharts.workload) {
         teamCharts.workload.destroy();
     }
@@ -122,17 +124,18 @@ function createWorkloadChart(members) {
                     backgroundColor: utilization.map(u => 
                         u > 80 ? '#EF4444' : u > 60 ? '#F59E0B' : '#10B981'
                     ),
-                    yAxisID: 'y',
-                    order: 1
+                    order: 1,
+                    yAxisID: 'y'
                 },
                 {
                     label: 'Tareas Activas',
                     data: currentTasks,
                     backgroundColor: '#3B82F6',
+                    borderColor: '#3B82F6',
                     type: 'line',
-                    yAxisID: 'y1',
-                    order: 2,
-                    tension: 0.4
+                    order: 0,
+                    tension: 0.4,
+                    yAxisID: 'y1'
                 }
             ]
         },
@@ -147,47 +150,22 @@ function createWorkloadChart(members) {
                     type: 'linear',
                     display: true,
                     position: 'left',
-                    title: {
-                        display: true,
-                        text: 'Utilización (%)'
-                    },
-                    max: 100
+                    max: 100,
+                    title: { display: true, text: 'Utilización (%)' }
                 },
                 y1: {
                     type: 'linear',
                     display: true,
                     position: 'right',
-                    title: {
-                        display: true,
-                        text: 'Tareas Activas'
-                    },
-                    grid: {
-                        drawOnChartArea: false,
-                    },
-                }
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
-                            }
-                            if (context.datasetIndex === 0) {
-                                label += context.parsed.y.toFixed(1) + '%';
-                            } else {
-                                label += context.parsed.y;
-                            }
-                            return label;
-                        }
-                    }
+                    title: { display: true, text: 'Tareas' },
+                    grid: { drawOnChartArea: false }
                 }
             }
         }
     });
 }
 
+// --- CORRECCIÓN IMPORTANTE AQUÍ ---
 function createSkillsChart(skillCoverage) {
     const ctx = document.getElementById('skillsChart').getContext('2d');
     
@@ -201,35 +179,26 @@ function createSkillsChart(skillCoverage) {
         .slice(0, 10); // Top 10 habilidades
     
     teamCharts.skills = new Chart(ctx, {
-        type: 'horizontalBar',
+        type: 'bar', // CAMBIADO A 'bar'
         data: {
             labels: sortedSkills.map(([skill]) => skill),
             datasets: [{
                 label: 'Miembros con esta habilidad',
                 data: sortedSkills.map(([, count]) => count),
-                backgroundColor: [
-                    '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0',
-                    '#9966FF', '#FF9F40', '#FF6384', '#C9CBCF',
-                    '#7FFFD4', '#FF69B4'
-                ],
-                borderWidth: 0,
+                backgroundColor: '#36A2EB',
                 borderRadius: 4
             }]
         },
         options: {
-            indexAxis: 'y',
+            indexAxis: 'y', // ROTA LA GRÁFICA
             responsive: true,
             plugins: {
-                legend: {
-                    display: false
-                }
+                legend: { display: false }
             },
             scales: {
                 x: {
                     beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
+                    ticks: { stepSize: 1 }
                 }
             }
         }
@@ -238,51 +207,40 @@ function createSkillsChart(skillCoverage) {
 
 function createSkillsDistribution(members) {
     const container = document.getElementById('skillsDistribution');
+    if (!container) return;
     
-    // Agrupar habilidades por nivel
     const skillsByLevel = {
-        'junior': new Set(),
-        'mid': new Set(),
-        'senior': new Set(),
-        'expert': new Set()
+        'junior': new Set(), 'mid': new Set(), 'senior': new Set(), 'expert': new Set()
     };
     
     members.forEach(member => {
         member.skills.forEach(skill => {
-            skillsByLevel[member.skill_level].add(skill);
+            if (skillsByLevel[member.skill_level]) {
+                skillsByLevel[member.skill_level].add(skill);
+            }
         });
     });
     
     container.innerHTML = Object.entries(skillsByLevel).map(([level, skills]) => {
         const skillCount = skills.size;
-        const levelNames = {
-            'junior': 'Junior',
-            'mid': 'Mid-Level', 
-            'senior': 'Senior',
-            'expert': 'Expert'
-        };
-        
         const colors = {
-            'junior': 'bg-blue-100 text-blue-800',
-            'mid': 'bg-green-100 text-green-800',
-            'senior': 'bg-purple-100 text-purple-800',
-            'expert': 'bg-orange-100 text-orange-800'
+            'junior': 'blue', 'mid': 'green', 'senior': 'purple', 'expert': 'orange'
         };
+        const c = colors[level] || 'gray';
         
         return `
             <div class="text-center p-4 border border-gray-200 rounded-lg">
-                <div class="text-2xl font-bold ${colors[level].split(' ')[1]}">${skillCount}</div>
-                <div class="text-sm font-medium ${colors[level].split(' ')[0]} p-2 rounded-lg mt-2">
-                    ${levelNames[level]}
+                <div class="text-2xl font-bold text-${c}-800">${skillCount}</div>
+                <div class="text-sm font-medium bg-${c}-100 text-${c}-800 p-2 rounded-lg mt-2 uppercase">
+                    ${level}
                 </div>
                 <div class="text-xs text-gray-600 mt-2">habilidades únicas</div>
-                <div class="mt-3 text-xs text-gray-500 max-h-20 overflow-y-auto">
-                    ${Array.from(skills).slice(0, 5).join(', ')}${skillCount > 5 ? '...' : ''}
-                </div>
             </div>
         `;
     }).join('');
 }
 
+// Cargar inicial
+document.addEventListener('DOMContentLoaded', loadTeamMetrics);
 // Auto-refresh cada 2 minutos
 setInterval(loadTeamMetrics, 120000);

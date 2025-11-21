@@ -1,24 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}{{ project.card_title }} - Trello AI Bot{% endblock %}
+{% block title %}{{ project.get('card_title', 'Proyecto sin título') }} - Trello AI Bot{% endblock %}
 
 {% block content %}
 <div class="mb-8">
     <div class="flex justify-between items-start">
         <div>
-            <h1 class="text-3xl font-bold text-gray-800">{{ project.card_title }}</h1>
+            <h1 class="text-3xl font-bold text-gray-800">{{ project.get('card_title', 'Sin Título') }}</h1>
             <p class="text-gray-600">Detalles completos del proyecto</p>
         </div>
         <div class="flex space-x-2">
             <a href="/dashboard/projects" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm">
                 <i class="fas fa-arrow-left mr-2"></i>Volver
             </a>
-            <button onclick="updateProjectStatus('in_progress')" 
-                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
-                <i class="fas fa-play mr-2"></i>Iniciar Proyecto
+            <button onclick="updateProjectStatus('in_progress')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                <i class="fas fa-play mr-2"></i>Iniciar
             </button>
-            <button onclick="updateProjectStatus('completed')" 
-                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+            <button onclick="updateProjectStatus('completed')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
                 <i class="fas fa-check mr-2"></i>Completar
             </button>
         </div>
@@ -26,160 +24,161 @@
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-    <!-- Project Info -->
     <div class="chart-container p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Información del Proyecto</h3>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Información</h3>
         <div class="space-y-3">
+            <div><span class="text-sm text-gray-600">ID:</span> <p class="font-mono text-sm">{{ project.get('project_id') }}</p></div>
+            <div><span class="text-sm text-gray-600">Solicitante:</span> <p class="font-medium">{{ project.get('requested_by', 'Desconocido') }}</p></div>
+            
             <div>
-                <span class="text-sm text-gray-600">ID del Proyecto:</span>
-                <p class="font-mono text-sm">{{ project.project_id }}</p>
+                <span class="text-sm text-gray-600">Fecha:</span> 
+                <p>
+                    {% if project.get('request_date') %}
+                        {% if project.request_date.strftime is defined %}
+                            {# Es un objeto datetime real #}
+                            {{ project.request_date.strftime('%d/%m/%Y %H:%M') }}
+                        {% else %}
+                            {# Es un string ISO, lo cortamos como texto #}
+                            {{ project.request_date|string|replace('T', ' ') }}
+                        {% endif %}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </p>
             </div>
-            <div>
-                <span class="text-sm text-gray-600">Solicitado por:</span>
-                <p class="font-medium">{{ project.requested_by }}</p>
-            </div>
-            <div>
-                <span class="text-sm text-gray-600">Fecha de Solicitud:</span>
-                <p>{{ project.request_date.strftime('%d/%m/%Y %H:%M') if project.request_date else 'N/A' }}</p>
-            </div>
+
             <div>
                 <span class="text-sm text-gray-600">Estado:</span>
                 <span class="px-2 py-1 text-xs font-semibold rounded-full 
-                          {% if project.status == 'completed' %}bg-green-100 text-green-800
-                          {% elif project.status == 'in_progress' %}bg-blue-100 text-blue-800
-                          {% else %}bg-yellow-100 text-yellow-800{% endif %}">
-                    {{ project.status }}
+                    {% if project.get('status') == 'completed' %}bg-green-100 text-green-800
+                    {% elif project.get('status') == 'in_progress' %}bg-blue-100 text-blue-800
+                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                    {{ project.get('status', 'pending') }}
                 </span>
-            </div>
-            <div>
-                <span class="text-sm text-gray-600">Progreso:</span>
-                <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
-                    <div class="bg-blue-600 h-2 rounded-full" 
-                         style="width: {{ project.progress_percentage }}%"></div>
-                </div>
-                <p class="text-xs text-gray-600 mt-1">{{ project.progress_percentage }}% completado</p>
             </div>
         </div>
     </div>
 
-    <!-- Project Metrics -->
     <div class="chart-container p-6">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">Métricas del Proyecto</h3>
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Métricas</h3>
         <div class="space-y-3">
             <div class="flex justify-between">
                 <span class="text-sm text-gray-600">Total Tareas:</span>
-                <span class="font-semibold">{{ project.total_tasks }}</span>
+                <span class="font-semibold">{{ project.get('total_tasks', 0) }}</span>
             </div>
             <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Horas Estimadas:</span>
-                <span class="font-semibold">{{ project.total_estimated_hours }}h</span>
+                <span class="text-sm text-gray-600">Horas Est.:</span>
+                <span class="font-semibold">{{ project.get('total_estimated_hours', 0) }}h</span>
             </div>
             <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Complejidad Promedio:</span>
-                <span class="font-semibold capitalize">{{ project.average_complexity }}</span>
+                <span class="text-sm text-gray-600">Complejidad Prom.:</span>
+                <span class="font-semibold capitalize">{{ project.get('average_complexity', 'N/A') }}</span>
             </div>
             <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Prioridad Más Alta:</span>
-                <span class="font-semibold capitalize">{{ project.highest_priority }}</span>
-            </div>
-            <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Nivel de Riesgo:</span>
-                <span class="font-semibold capitalize">{{ project.risk_assessment }}</span>
+                <span class="text-sm text-gray-600">Riesgo Global:</span>
+                <span class="font-semibold capitalize">{{ project.get('risk_assessment', 'N/A') }}</span>
             </div>
         </div>
     </div>
 
-    <!-- Distribution -->
     <div class="chart-container p-6">
         <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribución</h3>
         <div class="space-y-4">
             <div>
-                <h4 class="text-sm font-medium text-gray-700 mb-2">Por Categoría</h4>
-                {% for category, count in project.category_distribution.items() %}
+                <h4 class="text-sm font-medium text-gray-700 mb-2">Categorías</h4>
+                {% for category, count in project.get('category_distribution', {}).items() %}
                 <div class="flex justify-between text-sm mb-1">
                     <span class="capitalize">{{ category }}</span>
                     <span class="font-semibold">{{ count }}</span>
                 </div>
+                {% else %}
+                <p class="text-xs text-gray-500">Sin datos de categoría</p>
                 {% endfor %}
             </div>
             <div>
-                <h4 class="text-sm font-medium text-gray-700 mb-2">Por Prioridad</h4>
-                {% for priority, count in project.priority_distribution.items() %}
+                <h4 class="text-sm font-medium text-gray-700 mb-2">Prioridades</h4>
+                {% for priority, count in project.get('priority_distribution', {}).items() %}
                 <div class="flex justify-between text-sm mb-1">
                     <span class="capitalize">{{ priority }}</span>
                     <span class="font-semibold">{{ count }}</span>
                 </div>
+                {% else %}
+                <p class="text-xs text-gray-500">Sin datos de prioridad</p>
                 {% endfor %}
             </div>
         </div>
     </div>
 </div>
 
-<!-- Tasks List -->
 <div class="chart-container p-6">
     <h3 class="text-xl font-semibold text-gray-800 mb-4">Lista de Tareas</h3>
     <div class="space-y-4">
-        {% for task in project.tasks %}
-        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+        {% for task in project.get('tasks', []) %}
+        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
             <div class="flex justify-between items-start mb-2">
-                <h4 class="font-medium text-gray-800">{{ task.description }}</h4>
-                <div class="flex space-x-2">
-                    <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 capitalize">
-                        {{ task.category }}
+                <h4 class="font-medium text-gray-800 flex-1 mr-4">{{ task.get('description', 'Sin descripción') }}</h4>
+                <div class="flex space-x-2 flex-shrink-0">
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 capitalize">
+                        {{ task.get('category', 'General') }}
                     </span>
                     <span class="px-2 py-1 text-xs font-semibold rounded-full 
-                                {% if task.priority == 'alta' or task.priority == 'crítica' %}bg-red-100 text-red-800
-                                {% elif task.priority == 'media' %}bg-yellow-100 text-yellow-800
-                                {% else %}bg-green-100 text-green-800{% endif %} capitalize">
-                        {{ task.priority }}
+                        {% set prio = task.get('priority', 'media')|lower %}
+                        {% if prio in ['alta', 'crítica', 'high', 'critical'] %}bg-red-100 text-red-800
+                        {% elif prio in ['baja', 'low'] %}bg-green-100 text-green-800
+                        {% else %}bg-yellow-100 text-yellow-800{% endif %} capitalize">
+                        {{ task.get('priority', 'Media') }}
                     </span>
                 </div>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-gray-600">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mt-3 pt-3 border-t border-gray-100">
                 <div>
-                    <span class="font-medium">Complejidad:</span>
-                    <span class="capitalize">{{ task.complexity }}</span>
+                    <span class="font-medium text-gray-500">Complejidad:</span>
+                    <span class="capitalize ml-1 text-gray-800">{{ task.get('complexity', 'Moderada') }}</span>
                 </div>
                 <div>
-                    <span class="font-medium">Tiempo Estimado:</span>
-                    <span>
-                        {% if task.time_estimate %}
-                            {{ task.time_estimate.realistic }}h
+                    <span class="font-medium text-gray-500">Estimado:</span>
+                    <span class="ml-1 text-gray-800 font-semibold">
+                        {% if task.get('time_estimate') is mapping %}
+                            {{ task.time_estimate.get('realistic', 4.0) }}h
                         {% else %}
-                            N/A
+                            {{ task.get('time_estimate', 4.0) }}h
                         {% endif %}
                     </span>
                 </div>
                 <div>
-                    <span class="font-medium">Habilidades:</span>
-                    <span>{{ task.required_skills|join(', ') if task.required_skills else 'N/A' }}</span>
-                </div>
-                <div>
-                    <span class="font-medium">Riesgo:</span>
-                    <span class="capitalize">{{ task.risk_level }}</span>
+                    <span class="font-medium text-gray-500">Habilidades:</span>
+                    <span class="ml-1 text-blue-600">
+                        {% set skills = task.get('required_skills', []) %}
+                        {% if skills is string %}
+                            {{ skills }}
+                        {% elif skills is iterable and skills is not string %}
+                            {{ skills|join(', ') }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </span>
                 </div>
             </div>
-
-            {% if task.dependencies %}
-            <div class="mt-2">
-                <span class="text-sm font-medium text-gray-700">Dependencias:</span>
-                <p class="text-sm text-gray-600">{{ task.dependencies|join(', ') }}</p>
-            </div>
-            {% endif %}
+        </div>
+        {% else %}
+        <div class="text-center py-8 text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+            <i class="fas fa-tasks mb-2 text-2xl"></i>
+            <p>No hay tareas registradas para este proyecto.</p>
         </div>
         {% endfor %}
     </div>
 </div>
 
-<!-- Required Skills -->
 <div class="chart-container p-6 mt-6">
-    <h3 class="text-lg font-semibold text-gray-800 mb-4">Habilidades Requeridas</h3>
+    <h3 class="text-lg font-semibold text-gray-800 mb-4">Habilidades Técnicas Requeridas</h3>
     <div class="flex flex-wrap gap-2">
-        {% for skill in project.required_skills %}
-        <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+        {% for skill in project.get('required_skills', []) %}
+        <span class="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full text-sm font-medium">
             {{ skill }}
         </span>
+        {% else %}
+        <p class="text-sm text-gray-500 italic">No se detectaron habilidades específicas.</p>
         {% endfor %}
     </div>
 </div>
@@ -188,23 +187,29 @@
 {% block scripts %}
 <script>
 async function updateProjectStatus(status) {
+    const btn = event.currentTarget;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    btn.disabled = true;
+
     try {
         const response = await fetch(`/dashboard/api/project/{{ project.project_id }}/status?status=${status}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            }
+            headers: {'Content-Type': 'application/json'}
         });
 
         if (response.ok) {
-            alert('Estado del proyecto actualizado correctamente');
             location.reload();
         } else {
             const error = await response.json();
-            alert('Error: ' + error.detail);
+            alert('Error: ' + (error.detail || 'Error desconocido'));
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
     } catch (error) {
-        alert('Error al actualizar el estado: ' + error.message);
+        alert('Error de conexión: ' + error.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
 }
 </script>
