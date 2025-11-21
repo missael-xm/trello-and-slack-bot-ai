@@ -1,5 +1,7 @@
-# src/llms/openai.py
-from langchain_openai import ChatOpenAI
+# src/llms/openai.py - CORREGIDO
+# CAMBIAR: from langchain_openai import ChatOpenAI
+from langchain.llms import OpenAI
+from langchain.chat_models import ChatOpenAI
 import utils.config as config
 
 def get_models():

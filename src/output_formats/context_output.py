@@ -1,35 +1,16 @@
 # src/output_formats/context_output.py
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
-from models.langchain import LangchainOutput
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+from typing import List
+from models.langchain import create_pydantic_output_config
 
-def context_output_format() -> LangchainOutput:
+class ContextOutput(BaseModel):
+    decisions: str = Field(description="Respuestas a las preguntas de decisión (yes/no/request/etc)")
+    context: List[str] = Field(description="Lista de comentarios extraídos del contexto")
+
+def context_output_format():
     """
-    Define el formato de respuesta para la cadena de contexto.
-    La IA debe devolver decisiones y contexto extraído.
+    Define el formato de respuesta para la cadena de contexto usando Pydantic.
+    Esto evita errores de JSON mal formados.
     """
-    response_schemas = [
-        ResponseSchema(
-            name="decisions",
-            description="answers to the questions",
-            type="string"
-        ),
-        ResponseSchema(
-            name="context",
-            description="Final answer",
-            type="List"
-        ),
-    ]
-
-    structured_output_parser = StructuredOutputParser.from_response_schemas(
-        response_schemas=response_schemas
-    )
-    format_instructions = structured_output_parser.get_format_instructions(
-        only_json=True
-    )
-
-    output = LangchainOutput(
-        format=format_instructions,
-        parser=structured_output_parser,
-    )
-
-    return output
+    return create_pydantic_output_config(ContextOutput)

@@ -1,6 +1,5 @@
-# src/trello/trello_features.py
+# src/trello/trello_features.py - CORREGIDO
 from trello.trello_requests import TrelloRequests
-from langchain_community.document_loaders import RecursiveUrlLoader
 from typing import Union
 import re
 
@@ -57,7 +56,36 @@ class TrelloFeatures(TrelloRequests):
         return figma_url, card_comment_history
 
     def get_fourthwall_shop_link(self, card_id: str) -> Union[None, str]:
-        """Busca links de Fourthwall usando custom fields y scraping"""
-        # Implementación completa que vimos anteriormente
-        # Incluye custom fields, descripción, y scraping automático
-        pass
+        """Busca links de Fourthwall en custom fields, descripción y attachments"""
+        try:
+            # 1. Buscar en custom fields
+            custom_fields = self.get_card_data(card_id=card_id, metadata=True)
+            if custom_fields:
+                for field in custom_fields:
+                    field_value = field.get('value', {})
+                    if isinstance(field_value, dict):
+                        text = field_value.get('text', '')
+                    else:
+                        text = str(field_value)
+                    
+                    if text and 'fourthwall' in text.lower():
+                        return text
+            
+            # 2. Buscar en descripción
+            description = self.get_card_data(card_id=card_id, field="desc")
+            if description and isinstance(description, str) and 'fourthwall' in description.lower():
+                return description
+            
+            # 3. Buscar en attachments
+            attachments = self.get_attachments(card_id)
+            if attachments:
+                for attachment in attachments:
+                    attachment_name = attachment.get('name', '')
+                    if attachment_name and 'fourthwall' in attachment_name.lower():
+                        return attachment.get('url')
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error buscando link de Fourthwall: {e}")
+            return None

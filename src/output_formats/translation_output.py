@@ -1,30 +1,22 @@
 # src/output_formats/translation_output.py
-from langchain.output_parsers import StructuredOutputParser, ResponseSchema
-from models.langchain import LangchainOutput
+from langchain.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from models.langchain import create_pydantic_output_config
 
-def translation_output_format() -> LangchainOutput:
-    """
-    Define el formato de respuesta para la cadena de traducción.
-    La IA debe devolver un diccionario con la traducción.
-    """
-    response_schemas = [
-        ResponseSchema(
-            name="translation",
-            description="translated",
-            type="Dict"
-        ),
-    ]
+class TranslatedTask(BaseModel):
+    description: str = Field(description="Descripción de la tarea traducida al español")
+    category: str = Field(description="Categoría técnica (Frontend, Backend, etc.)")
+    priority: str = Field(description="Prioridad (Alta, Media, Baja)")
+    # CAMPOS NUEVOS RECUPERADOS
+    time_estimate: float = Field(description="Horas estimadas (copiar el valor numérico original)")
+    complexity: str = Field(description="Complejidad técnica (copiar del original)")
+    required_skills: List[str] = Field(description="Lista de habilidades técnicas (copiar del original)")
 
-    structured_output_parser = StructuredOutputParser.from_response_schemas(
-        response_schemas=response_schemas
-    )
-    format_instructions = structured_output_parser.get_format_instructions(
-        only_json=True
-    )
+class TranslationOutput(BaseModel):
+    translated_tasks: List[TranslatedTask] = Field(description="Lista de tareas traducidas con todos sus detalles técnicos")
+    summary: str = Field(description="Resumen ejecutivo de las tareas")
+    notes: Optional[str] = Field(description="Notas adicionales")
 
-    output = LangchainOutput(
-        format=format_instructions,
-        parser=structured_output_parser,
-    )
-
-    return output
+def translation_output_format():
+    return create_pydantic_output_config(TranslationOutput)

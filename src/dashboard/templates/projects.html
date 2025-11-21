@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Proyectos - Trello AI Bot{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-800">Gestión de Proyectos</h1>
+    <p class="text-gray-600">Todos los proyectos generados por el sistema</p>
+</div>
+
+<!-- Projects Table -->
+<div class="chart-container p-6">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-bold text-gray-800">Lista de Proyectos</h2>
+        <div class="flex space-x-2">
+            <button onclick="refreshProjects()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                <i class="fas fa-sync-alt mr-2"></i>Actualizar
+            </button>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proyecto</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Solicitado por</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tareas</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200" id="projectsTableBody">
+                {% for project in projects %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-project-diagram text-blue-600"></i>
+                            </div>
+                            <div class="ml-4">
+                                <div class="text-sm font-medium text-gray-900">{{ project.card_title }}</div>
+                                <div class="text-sm text-gray-500">ID: {{ project.project_id }}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">{{ project.requested_by }}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">
+                            {{ project.request_date.strftime('%d/%m/%Y') if project.request_date else 'N/A' }}
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {{ project.total_tasks }} tareas
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {{ project.total_estimated_hours }}h
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                    {% if project.status == 'completed' %}bg-green-100 text-green-800
+                                    {% elif project.status == 'in_progress' %}bg-blue-100 text-blue-800
+                                    {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                            {{ project.status }}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <a href="/dashboard/project/{{ project.project_id }}" 
+                           class="text-blue-600 hover:text-blue-900 mr-3">
+                            <i class="fas fa-eye mr-1"></i>Ver
+                        </a>
+                        <button onclick="updateStatus('{{ project.project_id }}', 'in_progress')" 
+                                class="text-green-600 hover:text-green-900 mr-3">
+                            <i class="fas fa-play mr-1"></i>Iniciar
+                        </button>
+                        <button onclick="updateStatus('{{ project.project_id }}', 'completed')" 
+                                class="text-purple-600 hover:text-purple-900">
+                            <i class="fas fa-check mr-1"></i>Completar
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if not projects %}
+    <div class="text-center py-12 text-gray-500">
+        <i class="fas fa-inbox text-4xl mb-4"></i>
+        <p class="text-lg">No hay proyectos disponibles</p>
+        <p class="text-sm mt-2">Los proyectos aparecerán aquí cuando el bot procese solicitudes de Trello</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function updateStatus(projectId, status) {
+    try {
+        const response = await fetch(`/dashboard/api/project/${projectId}/status?status=${status}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (response.ok) {
+            alert('Estado actualizado correctamente');
+            refreshProjects();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + error.detail);
+        }
+    } catch (error) {
+        alert('Error al actualizar el estado: ' + error.message);
+    }
+}
+
+async function refreshProjects() {
+    try {
+        const response = await fetch('/dashboard/api/projects');
+        const projects = await response.json();
+        
+        // Aquí podrías actualizar la tabla dinámicamente
+        location.reload(); // Simple reload por ahora
+    } catch (error) {
+        alert('Error al actualizar proyectos: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

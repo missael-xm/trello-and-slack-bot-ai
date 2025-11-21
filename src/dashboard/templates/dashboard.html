@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard General - Trello AI Bot{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex justify-between items-center">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-800">Panel de Control</h1>
+        <p class="text-gray-600">Visión general del rendimiento y el equipo</p>
+    </div>
+    <div>
+        <select id="periodSelect" onchange="loadCharts()" class="bg-white border border-gray-300 text-gray-700 py-2 px-4 rounded-lg shadow-sm">
+            <option value="7">Últimos 7 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="90">Últimos 3 meses</option>
+        </select>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8" id="summaryMetrics">
+    <div class="p-6 bg-white rounded-xl shadow-sm border border-gray-100 text-center"><div class="animate-pulse h-8 bg-gray-200 rounded w-1/2 mx-auto"></div></div>
+    <div class="p-6 bg-white rounded-xl shadow-sm border border-gray-100 text-center"><div class="animate-pulse h-8 bg-gray-200 rounded w-1/2 mx-auto"></div></div>
+    <div class="p-6 bg-white rounded-xl shadow-sm border border-gray-100 text-center"><div class="animate-pulse h-8 bg-gray-200 rounded w-1/2 mx-auto"></div></div>
+    <div class="p-6 bg-white rounded-xl shadow-sm border border-gray-100 text-center"><div class="animate-pulse h-8 bg-gray-200 rounded w-1/2 mx-auto"></div></div>
+</div>
+
+<div class="mb-8">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Estado del Equipo</h2>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+            <div class="p-3 bg-blue-50 rounded-full mr-4"><i class="fas fa-users text-blue-600 text-xl"></i></div>
+            <div><p class="text-sm text-gray-500">Disponibilidad</p><h3 class="text-2xl font-bold text-gray-800" id="teamAvailable">-</h3></div>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+            <div class="p-3 bg-orange-50 rounded-full mr-4"><i class="fas fa-user-clock text-orange-600 text-xl"></i></div>
+            <div><p class="text-sm text-gray-500">Miembros Saturados</p><h3 class="text-2xl font-bold text-gray-800" id="teamBusy">-</h3></div>
+        </div>
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+            <div class="p-3 bg-green-50 rounded-full mr-4"><i class="fas fa-chart-line text-green-600 text-xl"></i></div>
+            <div><p class="text-sm text-gray-500">Tasa Completación</p><h3 class="text-2xl font-bold text-gray-800" id="teamCompletion">-%</h3></div>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Prioridad</h3>
+        <div class="h-64 relative"><canvas id="priorityChart"></canvas></div>
+    </div>
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Categorías</h3>
+        <div class="h-64 relative"><canvas id="categoryChart"></canvas></div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Actividad</h3>
+        <div class="h-64 relative"><canvas id="timelineChart"></canvas></div>
+    </div>
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 class="text-lg font-bold text-gray-800 mb-4">Habilidades</h3>
+        <div class="h-64 relative"><canvas id="skillsChart"></canvas></div>
+    </div>
+</div>
+
+<div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100" id="efficiencyMetrics">
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/analytics.js') }}"></script>
+{% endblock %}

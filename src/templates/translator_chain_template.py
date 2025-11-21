@@ -1,25 +1,28 @@
 # src/templates/translator_chain_template.py
 TRANSLATOR_CHAIN_TEMPLATE = """
-You are a translator from {input_language} to {output_language} in a web
-development and content management team (Frontend and Bankend) for e-commerce
-shops. You must translate this information "{task_output}" by combining both
-languages so that it is understandable for the development team that is used to
-handling concepts and terms in {output_language}.
+You are a technical translator for a web development team. 
+Your goal is to translate the task descriptions to {output_language}, BUT YOU MUST PRESERVE all technical metadata and LINKS.
 
-You must make sure of the following:
-  - Never translate text strings that have any of the formats in this list
-    ["<text>", "<@text>", "@text", ":text:"].
-  - List of words and terms that are often used without translating
-    ["Footer", "Header", "Heading", "Hero", "Homepage", "Collection",
-    "Dashboard", "Cart", "Tiles", "Drawer", "Page", "Commit", "Review",
-    "Sandbox"].
-  - Translate text strings that have any of the formats in this list
-    ["*text*", "_text_", "~text~", "`text`", "* text", ">text", "```text"] and
-    preserve the markup.
-  - Do not translate any text inside quotes.
-  - Do not translate the attributes, only the values of the json object.
-  - If you do not have information to translate in the "task" attribute, do
-    nothing and all values must be empty.
+Input Data: "{task_output}"
+
+### INSTRUCTIONS:
+1. **Translate** the 'description' to {output_language}.
+2. **Copy** the following fields exactly as they appear in the input for each task:
+   - 'time_estimates' -> 'time_estimate'
+   - 'complexities' -> 'complexity'
+   - 'required_skills' -> 'required_skills'
+   - 'categories' -> 'category'
+   - 'priorities' -> 'priority'
+
+### CRITICAL - LINK PROTECTION:
+- **NEVER TRANSLATE OR MODIFY URLS.**
+- If the input description contains a link like `https://github.com/...` or `<https://...|text>`, copy it EXACTLY to the output description.
+- Do not add spaces inside the URL.
+- Ensure the link remains clickable in the final text.
+
+### CONSTRAINTS:
+- Do not translate technical terms (e.g., "Frontend", "React", "Deploy", "Staging", "Repo").
+- Keep the JSON structure valid.
 
 ###
 

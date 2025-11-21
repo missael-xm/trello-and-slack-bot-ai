@@ -1,4 +1,4 @@
-# src/chains/task_chain.py
+# src/chains/task_chain.py - CORREGIDO
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from templates.task_chain_template import TASK_CHAIN_TEMPLATE
@@ -9,6 +9,9 @@ def generate_tasks(llm) -> LLMChain:
     Cadena que identifica tareas específicas de desarrollo web
     a partir del contexto de conversación.
     """
+    # Obtener la configuración de output
+    output_config = task_output_format()
+    
     prompt = PromptTemplate(
         input_variables=[
             'conversation_context',
@@ -16,14 +19,14 @@ def generate_tasks(llm) -> LLMChain:
         ],
         template=TASK_CHAIN_TEMPLATE,
         partial_variables={
-            "format_instructions": task_output_format().format
+            "format_instructions": output_config.format_instructions
         }
     )
 
     llm_chain = LLMChain(
         llm=llm,
         prompt=prompt,
-        output_parser=task_output_format().parser,
+        output_parser=output_config.parser,
         verbose=False,
         output_key="task_output",
     )

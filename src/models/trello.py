@@ -1,6 +1,11 @@
 # src/models/trello.py
 from pydantic import BaseModel
-from typing import Union
+from typing import Optional
+
+class TrelloAppCreator(BaseModel):
+    """Modelo para la estructura detallada de appCreator"""
+    id: str
+    name: str
 
 class TrelloEvent(BaseModel):
     """Modelo para el webhook crudo de Trello"""
@@ -12,7 +17,7 @@ class TrelloActionMainData(BaseModel):
     """Modelo para datos procesados de Trello"""
     action_id: str = ""
     action_type: str = ""
-    app_creator: Union[str, dict] = None
+    app_creator: Optional[TrelloAppCreator] = None
     card_list_name: str = ""
     card_list_before: str = ""
     card_list_after: str = ""
